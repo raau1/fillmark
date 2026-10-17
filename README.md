@@ -1,6 +1,6 @@
 # Fillmark — fill in PDF forms without changing how they look
 
-Fillmark is a browser application for filling in existing PDF documents such as clinical questionnaires and patient intake forms. You open a PDF, place (or automatically detect) answer fields on top of the original pages, fill them in, and save a completed copy of the **original** PDF with the answers written onto it.
+Fillmark is a browser application for filling in existing PDF documents. You open a PDF, place (or automatically detect) answer fields on top of the original pages, fill them in, and save a completed copy of the **original** PDF with the answers written onto it.
 
 Everything runs locally. No backend, no accounts, no analytics, no third-party requests.
 
