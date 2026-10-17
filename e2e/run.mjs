@@ -230,7 +230,7 @@ check('undo / redo', () => {
 log('fill mode');
 await page.click('.mode-btn:nth-child(2)');
 await page.waitForSelector('.fill-panel');
-const NAME = 'José Ñúñez Güell';
+let NAME = 'José Ñúñez Güell';
 const NOTES = 'Refiere olvidos frecuentes desde la infancia; pierde llaves y móvil a menudo. También: «¿dónde dejé las gafas?»';
 await page.type('.fill-field input[type=text]', NAME);
 // date input
@@ -260,6 +260,34 @@ check('overlay shows typed values immediately', () => {
   assert.ok(filledState.text.includes('09/03/1985'));
   assert.equal(filledState.marks, 2);
 });
+
+// one click on a box types straight onto the page; a long answer shrinks instead of being cut off
+log('type directly on the page');
+await scrollToPdf(P, BOX_NAME.y);
+{
+  const c = await toScreen(P, BOX_NAME.x + 40, BOX_NAME.y + BOX_NAME.h / 2);
+  await page.mouse.click(c.x, c.y);
+}
+await sleep(200);
+const typingOnPage = await page.evaluate(() => document.activeElement?.classList.contains('inline-editor'));
+await page.keyboard.down('Control');
+await page.keyboard.press('a');
+await page.keyboard.up('Control');
+NAME = 'María José Ñúñez Güell de la Fuente y Fernández-Villaverde, nacida en Santiago de Compostela el 3 de marzo de 1985';
+await page.keyboard.type(NAME);
+await page.keyboard.press('Enter');
+await sleep(300);
+const afterTyping = await page.evaluate(() => ({
+  overflow: document.querySelectorAll('.field-box.overflow').length,
+  panel: document.querySelector('.fill-field input[type=text]').value,
+  editorOpen: !!document.querySelector('.inline-editor'),
+}));
+check('one click on a text box types straight onto the page', () => {
+  assert.ok(typingOnPage, 'the cursor should be in the box on the page');
+  assert.equal(afterTyping.panel, NAME);
+  assert.equal(afterTyping.editorOpen, false);
+});
+check('a long answer shrinks to fit instead of being cut off', () => assert.equal(afterTyping.overflow, 0));
 
 // ---------- 4. alignment of overlays with the rendered page at several zoom levels
 async function measureAlignment(tag) {

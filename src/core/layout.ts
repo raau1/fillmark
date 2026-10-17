@@ -8,7 +8,12 @@ import type { CheckStyle, DateFormat, Field, FieldValue, FontFamily, Rect, Value
  * the same lines into the PDF.
  */
 
-export const MIN_FONT_SIZE = 4;
+/** Smallest size "shrink" goes to; below this the text no longer fits and is reported as overflow. */
+export const MIN_FONT_SIZE = 1;
+/** Text shrunk below this size is flagged as hard to read (but never cut off). */
+export const SMALL_TEXT_SIZE = 5;
+/** Starting size for automatic sizing in very small boxes. */
+const AUTO_MIN_START = 4;
 export const AUTO_MAX_SINGLE = 11;
 export const AUTO_MAX_MULTI = 10;
 
@@ -27,6 +32,8 @@ export interface TextLayout {
   visibleCount: number;
   /** true when the text does not fully fit (clipped horizontally or vertically) */
   overflow: boolean;
+  /** text was shrunk below SMALL_TEXT_SIZE to fit: complete, but may be hard to read */
+  small: boolean;
   fontSubstituted: boolean;
   charactersReplaced: boolean;
 }
@@ -113,7 +120,7 @@ export function layoutText(
     size = multiline
       ? Math.min(AUTO_MAX_MULTI, availH / lhFactor)
       : Math.min(AUTO_MAX_SINGLE, availH / (asc + desc));
-    size = Math.max(MIN_FONT_SIZE, Math.floor(size * 2) / 2);
+    size = Math.max(AUTO_MIN_START, Math.floor(size * 2) / 2);
   } else size = style.fontSize;
 
   const build = (fs: number) => {
@@ -130,9 +137,24 @@ export function layoutText(
 
   let res = build(size);
   if (!res.fits && canShrink && text.length > 0) {
-    while (!res.fits && size > MIN_FONT_SIZE) {
-      size = Math.max(MIN_FONT_SIZE, Math.round((size - 0.25) * 4) / 4);
+    // largest size (to 0.1 pt) at which everything fits: binary search
+    let lo = MIN_FONT_SIZE, hi = size;
+    let best = build(lo);
+    if (best.fits) {
+      while (hi - lo > 0.1) {
+        const mid = (lo + hi) / 2;
+        const r2 = build(mid);
+        if (r2.fits) {
+          lo = mid;
+          best = r2;
+        } else hi = mid;
+      }
+      size = Math.floor(lo * 10) / 10;
       res = build(size);
+      if (!res.fits) res = best;
+    } else {
+      size = MIN_FONT_SIZE;
+      res = best;
     }
   }
 
@@ -163,6 +185,7 @@ export function layoutText(
     lines,
     visibleCount,
     overflow,
+    small: text.length > 0 && !overflow && size < SMALL_TEXT_SIZE - 0.001,
     fontSubstituted: r.fontSubstituted,
     charactersReplaced: r.charactersReplaced,
   };

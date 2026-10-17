@@ -125,3 +125,12 @@ export function fieldOverflows(field: Field, values: Values, m: Measurer): boole
   if (!text) return false;
   return layoutText(field, text, m).overflow;
 }
+
+/** Font size a text field was shrunk to, when it is below the readable threshold (text still complete). */
+export function fieldSmallSize(field: Field, values: Values, m: Measurer): number | null {
+  if (!isTextType(field.type)) return null;
+  const text = displayText(field, values);
+  if (!text) return null;
+  const lay = layoutText(field, text, m);
+  return lay.small ? lay.fontSize : null;
+}

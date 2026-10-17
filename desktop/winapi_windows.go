@@ -36,6 +36,7 @@ var (
 
 const (
 	mbOK              = 0x0
+	mbOKCancel        = 0x1
 	mbYesNoCancel     = 0x3
 	mbYesNo           = 0x4
 	mbIconError       = 0x10
@@ -44,6 +45,7 @@ const (
 	mbIconInformation = 0x40
 	mbDefButton2      = 0x100
 	mbSetForeground   = 0x10000
+	idOK              = 1
 	idYes             = 6
 	idNo              = 7
 
@@ -202,11 +204,9 @@ func regReadString(root syscall.Handle, key, name string) string {
 
 // ---- shortcuts through the Windows Shell (IShellLink), like any installer
 
-// comCall invokes method `index` of a COM interface. COM objects live in memory
-// owned by Windows (not the Go heap), so reading their vtable is safe.
-func comCall(obj uintptr, index int, args ...uintptr) uintptr {
-	vtbl := **(**[64]uintptr)(unsafe.Pointer(&obj))
-	r, _, _ := syscall.SyscallN(vtbl[index], append([]uintptr{obj}, args...)...)
+// comCall invokes method `index` of a COM interface (see vtableEntry).
+func comCall(obj unsafe.Pointer, index int, args ...uintptr) uintptr {
+	r, _, _ := syscall.SyscallN(vtableEntry(obj, index), append([]uintptr{uintptr(obj)}, args...)...)
 	return r
 }
 
@@ -220,7 +220,7 @@ func createShortcut(lnkPath, target, workDir, iconPath, description string) erro
 	}
 	defer procCoUninitialize.Call()
 
-	var link uintptr
+	var link unsafe.Pointer
 	const clsctxInprocServer = 0x1
 	hr, _, _ = procCoCreateInstance.Call(uintptr(unsafe.Pointer(&clsidShellLink)), 0, clsctxInprocServer, uintptr(unsafe.Pointer(&iidIShellLinkW)), uintptr(unsafe.Pointer(&link)))
 	if hr != 0 {
@@ -244,7 +244,7 @@ func createShortcut(lnkPath, target, workDir, iconPath, description string) erro
 	if iconPath != "" {
 		comCall(link, 17, p(iconPath), 0)
 	}
-	var pf uintptr
+	var pf unsafe.Pointer
 	if hr := comCall(link, 0, uintptr(unsafe.Pointer(&iidIPersistFile)), uintptr(unsafe.Pointer(&pf))); hr != 0 {
 		return fmt.Errorf("QueryInterface(IPersistFile): 0x%x", hr)
 	}

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent as RPointerEvent } from 'react';
 import { clampRectToPage } from '../core/coords';
 import { defaultSize } from '../core/fieldFactory';
-import { displayText, effectiveValue, isChecked, layoutText } from '../core/layout';
+import { displayText, effectiveValue, isChecked, layoutText, padding } from '../core/layout';
 import { FONTS, type Measurer } from '../core/fonts';
 import type { Field, FieldType, PageInfo, Rect, Values } from '../core/types';
 import { FieldContent } from './FieldContent';
@@ -28,6 +28,8 @@ interface Props {
   onCreate(type: FieldType, page: number, rect: Rect): void;
   onTransform(changes: { id: string; rect: Rect }[], key: string): void;
   onActivate(field: Field): void;
+  /** highlight the field's entry in the side panel without moving the cursor there */
+  onReveal(field: Field): void;
   onHighlight(field: Field): void;
   onToggle(field: Field): void;
   onTextValue(field: Field, text: string): void;
@@ -213,13 +215,11 @@ export function FieldLayer(p: Props) {
               if (p.mode !== 'fill') return;
               e.stopPropagation();
               if (toggle) p.onToggle(f);
-              else if (f.type !== 'label') p.onActivate(f);
-            }}
-            onDoubleClick={(e) => {
-              if (p.mode === 'fill' && INLINE_TYPES.has(f.type)) {
-                e.stopPropagation();
+              else if (INLINE_TYPES.has(f.type)) {
+                // type straight onto the page; the side panel just highlights the field
                 setEditingId(f.id);
-              }
+                p.onReveal(f);
+              } else if (f.type !== 'label') p.onActivate(f);
             }}
             onFocus={() => p.mode === 'fill' && p.onHighlight(f)}
             onKeyDown={(e) => {
@@ -229,8 +229,10 @@ export function FieldLayer(p: Props) {
                 p.onToggle(f);
               } else if (!toggle && e.key === 'Enter') {
                 e.preventDefault();
-                if (INLINE_TYPES.has(f.type)) setEditingId(f.id);
-                else p.onActivate(f);
+                if (INLINE_TYPES.has(f.type)) {
+                  setEditingId(f.id);
+                  p.onReveal(f);
+                } else p.onActivate(f);
               }
             }}
           >
@@ -270,37 +272,72 @@ function InlineEditor({
   onChange: (v: string) => void;
   onClose: () => void;
 }) {
-  const ref = useRef<HTMLTextAreaElement>(null);
+  const multi = field.type === 'multiline';
+  const areaRef = useRef<HTMLTextAreaElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const v = effectiveValue(field, values);
   const text = typeof v === 'string' ? v : '';
+  // same size as the printed result: it shrinks live as the answer gets longer
   const lay = layoutText(field, displayText(field, values) || 'Xg', measurer);
+  const { px, py } = padding(field.rect, multi);
+  const fontSize = lay.fontSize * scale;
+
   useEffect(() => {
-    ref.current?.focus();
-    ref.current?.select();
+    const el = multi ? areaRef.current : inputRef.current;
+    el?.focus();
+    el?.setSelectionRange(el.value.length, el.value.length);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const multi = field.type === 'multiline';
+
+  const common = {
+    className: `inline-editor${multi ? ' multi' : ''}`,
+    'aria-label': field.name,
+    spellCheck: true,
+    onBlur: onClose,
+    style: {
+      left: field.rect.x * scale,
+      top: field.rect.y * scale,
+      width: field.rect.w * scale,
+      height: multi ? undefined : field.rect.h * scale,
+      // long-text boxes grow with their content while typing (scroll if the browser can't),
+      // so nothing is ever hidden; the page shows the shrunk result afterwards
+      minHeight: multi ? field.rect.h * scale : undefined,
+      fontSize,
+      fontFamily: FONTS[lay.family].css,
+      color: field.style.color,
+      textAlign: field.style.align,
+      lineHeight: multi ? field.style.lineHeight || 1.15 : 'normal',
+      padding: multi ? `${py * scale}px ${px * scale}px` : `0 ${px * scale}px`,
+    } as React.CSSProperties,
+  };
+  if (!multi) {
+    return (
+      <input
+        ref={inputRef}
+        type="text"
+        inputMode={field.type === 'number' ? 'decimal' : undefined}
+        value={text}
+        {...common}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape' || e.key === 'Enter') {
+            e.preventDefault();
+            onClose();
+          }
+          e.stopPropagation();
+        }}
+      />
+    );
+  }
   return (
     <textarea
-      ref={ref}
-      className="inline-editor"
+      ref={areaRef}
       value={text}
-      aria-label={field.name}
-      spellCheck
-      style={{
-        left: field.rect.x * scale,
-        top: field.rect.y * scale,
-        width: Math.max(field.rect.w * scale, 60),
-        height: Math.max(field.rect.h * scale, multi ? 40 : lay.fontSize * scale * 1.5),
-        fontSize: lay.fontSize * scale,
-        fontFamily: FONTS[lay.family].css,
-        color: field.style.color,
-        textAlign: field.style.align,
-        lineHeight: multi ? field.style.lineHeight : undefined,
-      }}
-      onChange={(e) => onChange(multi ? e.target.value : e.target.value.replace(/\n/g, ' '))}
-      onBlur={onClose}
+      rows={1}
+      {...common}
+      onChange={(e) => onChange(e.target.value)}
       onKeyDown={(e) => {
-        if (e.key === 'Escape' || (e.key === 'Enter' && !multi)) {
+        if (e.key === 'Escape') {
           e.preventDefault();
           onClose();
         }

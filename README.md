@@ -11,16 +11,18 @@ Everything runs locally. No backend, no accounts, no analytics, no third-party r
 **Installing**
 
 1. Double-click `Fillmark.exe`. Because the file is not code-signed, Windows may show *“Windows protected your PC”*: click **More info → Run anyway** (only the first time).
-2. Fillmark asks whether to install it. **Yes** installs it for your Windows user only — no administrator rights:
+2. Fillmark explains what it will install; click **OK**. It installs for your Windows user only — no administrator rights:
    - program in `%LOCALAPPDATA%\Programs\Fillmark`
    - **Fillmark** in the Start menu and on the desktop
-   - right-click a PDF → **Open with → Fillmark** (your default PDF program is not changed)
+   - right-click a PDF → **Open with → Fillmark** (your default PDF program is not changed; Fillmark also appears in **Settings → Default apps** if you want it as the default)
    - double-clicking a `.fillmark` project file opens it in Fillmark
    - an entry in **Settings → Apps** to uninstall it
 
-   **No** just runs it this time (it won't ask again; it can still be installed later with `Fillmark.exe --install`).
-3. Running an installer copy again (e.g. a newer `Fillmark.exe`) offers to update the installed one.
+   Then open Fillmark from the Start menu like any program. The downloaded file is no longer needed.
+3. Running a downloaded `Fillmark.exe` again just opens the installed Fillmark — or, if the download is a newer version, updates it first (no questions).
 4. If an earlier test build (called *InkWell* or *Casilla*) is installed, Fillmark removes its shortcuts and file associations and keeps its saved projects; old `.inkwell` and `.casilla` project files still open.
+
+To use Fillmark without installing it (e.g. from a USB stick), start it with `Fillmark.exe --portable`.
 
 **How it works.** Fillmark opens in its own window (no address bar or tabs) using the Microsoft Edge engine that is part of Windows 10/11 (Google Chrome is used if Edge is missing). Behind the window, `Fillmark.exe` serves the app on `127.0.0.1` only — nothing is reachable from the network, and file hand-over requires a secret token that changes on every start. The window has its own browser profile in `%LOCALAPPDATA%\Fillmark\profile`, separate from your normal browsing; saved projects live there. Exporting asks where to save each file. Fillmark closes itself a few seconds after its last window is closed. Opening another PDF while Fillmark is running opens a second window in the same app.
 
@@ -62,7 +64,7 @@ npm run preview      # serves dist/ at http://localhost:4173
    - Or place fields by hand: pick a tool (text, long text, checkbox, option, date, number, dropdown, signature, fixed note), then click on the page or drag to draw the size. After detection, clicking inside a printed box snaps the new field to it.
    - Move fields by dragging, resize with the handles, nudge with the arrow keys (Shift = 10 pt), align/distribute several fields, duplicate (Ctrl+D), copy/paste between pages, undo/redo (Ctrl+Z / Ctrl+Shift+Z).
    - The right panel sets label, section, type, exact position (points), font, size (automatic or fixed), colour, alignment, line spacing, overflow behaviour (shrink or keep size), check-mark style, border, background, required, default value, dropdown options and option groups.
-3. **Fill form** — answer in the side panel (grouped by section, with search and progress) or click directly on the page: clicking a checkbox ticks it, clicking a text box focuses its input, double-clicking a text box lets you type on the page. Focusing an input scrolls the page to its box.
+3. **Fill form** — answer in the side panel (grouped by section, with search and progress) or click directly on the page: clicking a checkbox ticks it, clicking a text box lets you type straight onto the page (Enter or a click elsewhere to finish). Answers that are too long for their box shrink to fit as you type; if text gets very small (under 5 pt) the form shows a notice. Focusing an input in the side panel scrolls the page to its box.
 4. **Preview PDF** — shows the actual generated PDF, page by page.
 5. **Export PDF** — choose a file name and
    - **Final copy** (recommended): answers are drawn onto the pages (flattened);
@@ -83,7 +85,7 @@ npm run preview      # serves dist/ at http://localhost:4173
 
 - **The PDF is the source of truth.** Pages are rendered with pdf.js; fields are overlays; the export writes onto the original pages with pdf-lib. The document is never re-created.
 - **One coordinate system.** Field rectangles are stored in *display points* (1/72 in, origin top-left of the page as displayed, after `/Rotate` and relative to the CropBox). Zoom only multiplies by the scale, so overlays stay aligned at any zoom level, window size or screen density. Conversion to PDF user space (bottom-left origin, unrotated, CropBox offset) happens in one place, `src/core/coords.ts`, and is tested against pdf.js's own viewport transforms for 0/90/180/270° pages with offset crop boxes.
-- **One text layout.** `src/core/layout.ts` decides font size (auto-fit or shrink), line breaks, alignment and baselines using the font metrics of the embedded font. The on-screen overlay draws exactly those lines (each forced to its measured width), and the exporter draws the same lines into the PDF, so what you see is what you get. Text that does not fit is flagged (badge on the page, message in the form, warning before export) — never clipped silently.
+- **One text layout.** `src/core/layout.ts` decides font size (auto-fit or shrink), line breaks, alignment and baselines using the font metrics of the embedded font. The on-screen overlay draws exactly those lines (each forced to its measured width), and the exporter draws the same lines into the PDF, so what you see is what you get. With the default *Shrink text* setting, text that is too long shrinks (to 0.1 pt precision) until all of it fits, and very small results are pointed out in the form and before export. Text is only cut off when it cannot fit even at 1 pt, or when a field is set to *Keep size*; that is always flagged (badge on the page, message in the form, warning before export) — never clipped silently.
 - **Unicode.** Answers use bundled DejaVu fonts (subset-embedded), so á é í ó ú ñ ü ¿ « » ≥ etc. come out as real, searchable text. The PDF standard fonts (Helvetica, Times, Courier) are also available; characters they cannot encode automatically fall back to DejaVu with a warning.
 - **Editable export** uses custom appearance streams built from the same layout, so the editable PDF looks like the flattened one in readers that respect them.
 - **Existing interactive fields** can be imported (position, type, options, current values). On export the originals are removed and replaced so nothing is drawn twice; dangling references left by pdf-lib are pruned so readers do not report damage.
@@ -133,7 +135,7 @@ On the 15-page example (A4, no text layer, no form fields):
 - **Rotated text inside a field** (other than following the page rotation) is not supported.
 - Very large documents work (pages are rendered lazily and released when far from view), but detection on hundreds of pages takes proportionally longer.
 - The UI is in English and Spanish (switch with the EN/ES button).
-- **Desktop app**: `Fillmark.exe` is not code-signed, so Windows SmartScreen warns on first run. The Windows-only parts (installer dialogs, shortcuts, registry entries, launching Edge) compile and pass static checks, but were built on Linux and have not yet been run on a Windows machine; the server, window hand-over and app inside it were tested through a Linux build of the same launcher. The window is an Edge/Chrome app window: Edge itself follows your Windows/Edge settings (updates, diagnostic data); Fillmark never sends document data anywhere.
+- **Desktop app**: `Fillmark.exe` is not code-signed, so Windows SmartScreen warns on first run. The Windows-only parts (installer dialogs, shortcuts, registry entries, launching Edge) are built on Linux: they compile and pass static checks and unit tests, but the automated tests cannot run them. Version 0.3.0 had an installer bug that was found on Windows (it stopped before creating the shortcuts and “Open with” entry); 0.3.1 fixes it. The server, window hand-over and app inside it are tested through a Linux build of the same launcher. The window is an Edge/Chrome app window: Edge itself follows your Windows/Edge settings (updates, diagnostic data); Fillmark never sends document data anywhere.
 
 ## Project structure
 
