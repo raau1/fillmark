@@ -149,6 +149,30 @@ await check('double-clicked .fillmark project opens with its answers', async () 
   assert.ok(texts.includes('Lucía Núñez'), JSON.stringify(texts));
 });
 
+// Save writes the changes back into the file that was opened
+{
+  p2.on('pageerror', (e) => errors.push(e.message));
+  const status = () => p2.$eval('.save-status', (e) => e.textContent.trim());
+  const before = await status();
+  await p2.click('.mode-btn:nth-child(2)');
+  await p2.waitForSelector('.fill-field input[type=text]');
+  await p2.click('.fill-field input[type=text]');
+  await p2.keyboard.press('End');
+  await p2.keyboard.type(' Pérez');
+  await sleep(300);
+  const dirty = await status();
+  await p2.click('.topbar .save-btn');
+  await p2.waitForFunction(() => document.querySelector('.save-status')?.textContent.trim().startsWith('Saved to'), { timeout: 30000 });
+  const saved = JSON.parse(readFileSync(proj, 'utf8'));
+  await check('Save writes the changes back into the opened .fillmark file', () => {
+    assert.equal(before, 'Saved to Prueba ñ.fillmark');
+    assert.equal(dirty, 'Changes not saved to Prueba ñ.fillmark');
+    assert.equal(saved.project.values.f1, 'Lucía Núñez Pérez');
+    assert.equal(saved.pdf, pdfB64);
+    assert.ok(!existsSync(proj + '.saving'));
+  });
+}
+
 // 5. closing every window ends the launcher
 await check('launcher keeps running while windows are open', () => assert.equal(exited, false));
 await p2.close({ runBeforeUnload: false });

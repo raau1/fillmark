@@ -12,6 +12,8 @@ import type { CheckStyle, DateFormat, Field, FieldValue, FontFamily, Rect, Value
 export const MIN_FONT_SIZE = 1;
 /** Text shrunk below this size is flagged as hard to read (but never cut off). */
 export const SMALL_TEXT_SIZE = 5;
+/** How far (pt) descenders may reach into the bottom padding before a line counts as not fitting. */
+const V_TOLERANCE = 0.5;
 /** Starting size for automatic sizing in very small boxes. */
 const AUTO_MIN_START = 4;
 export const AUTO_MAX_SINGLE = 11;
@@ -100,6 +102,22 @@ export function layoutText(
   rawText: string,
   m: Measurer,
 ): TextLayout {
+  const single = layoutBox(field, rawText, m);
+  // A one-line box with a long answer: if squeezing it onto one line makes it hard to read
+  // (or impossible), wrap it onto more lines inside the same box when that gives bigger text.
+  const auto = !field.style.fontSize || field.style.fontSize <= 0;
+  if (!isMultilineType(field.type) && (auto || field.style.overflow === 'shrink') && (single.overflow || single.small)) {
+    const wrapped = layoutBox({ ...field, type: 'multiline' }, rawText.replace(/[\r\n]+/g, ' '), m);
+    if ((!wrapped.overflow && single.overflow) || (!wrapped.overflow && wrapped.fontSize > single.fontSize + 0.25)) return wrapped;
+  }
+  return single;
+}
+
+function layoutBox(
+  field: Pick<Field, 'type' | 'rect' | 'style'>,
+  rawText: string,
+  m: Measurer,
+): TextLayout {
   const { rect, style } = field;
   const multiline = isMultilineType(field.type);
   const src = multiline ? rawText.replace(/\r\n?/g, '\n') : rawText.replace(/[\r\n]+/g, ' ');
@@ -123,16 +141,22 @@ export function layoutText(
     size = Math.max(AUTO_MIN_START, Math.floor(size * 2) / 2);
   } else size = style.fontSize;
 
+  /** bottom of line i (its descenders), field-local, when set at size fs */
+  const multilineBottom = (i: number, fs: number) => {
+    const lineH = fs * lhFactor;
+    return py + (lineH - (asc + desc) * fs) / 2 + i * lineH + (asc + desc) * fs;
+  };
+
   const build = (fs: number) => {
     if (!multiline) {
       const w = m.width(family, text, fs);
       return { lineTexts: [text], fits: w <= availW + 0.01 && (asc + desc) * fs <= availH + 0.5 };
     }
     const lineTexts = text.split('\n').flatMap((p) => wrapParagraph(m, family, fs, p, availW));
-    const lineH = fs * lhFactor;
-    const totalH = (lineTexts.length - 1) * lineH + (asc + desc) * fs;
+    // must use exactly the geometry the lines are drawn with (see multilineBottom)
+    const lastBottom = multilineBottom(lineTexts.length - 1, fs);
     const widthOk = lineTexts.every((l) => m.width(family, l, fs) <= availW + 0.01);
-    return { lineTexts, fits: totalH <= availH + 0.5 && widthOk };
+    return { lineTexts, fits: lastBottom <= rect.h - py + V_TOLERANCE && widthOk };
   };
 
   let res = build(size);
@@ -174,7 +198,7 @@ export function layoutText(
       const w = m.width(family, t, size);
       const baseline = first + i * lineH;
       lines.push({ text: t, width: w, x: alignX(style.align, rect.w, px, w), baseline });
-      if (baseline + desc * size <= rect.h - py + 0.75) visibleCount = i + 1;
+      if (multilineBottom(i, size) <= rect.h - py + V_TOLERANCE) visibleCount = i + 1;
     });
   }
   const overflowH = lines.some((l) => l.width > availW + 0.01);
