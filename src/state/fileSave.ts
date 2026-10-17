@@ -49,6 +49,33 @@ export async function chooseSaveTarget(suggestedName: string): Promise<SaveTarge
   }
 }
 
+const PDF_TYPES = [{ description: 'PDF document', accept: { 'application/pdf': ['.pdf'] } }];
+
+/**
+ * Asks where to save an exported PDF (the system Save dialog), remembering the last folder.
+ * Returns null when the user cancels, or 'download' in browsers without a Save dialog.
+ * Call it straight from the click, before any slow work, so the browser allows the dialog.
+ */
+export async function choosePdfDestination(suggestedName: string): Promise<FileSystemFileHandle | 'download' | null> {
+  if (!canChooseFiles()) return 'download';
+  try {
+    return await w().showSaveFilePicker!({ suggestedName, types: PDF_TYPES, id: 'fillmark-pdf-exports' });
+  } catch (e) {
+    if (isAbort(e)) return null;
+    throw e;
+  }
+}
+
+/** Writes a PDF to the place chosen with choosePdfDestination (or downloads it). Returns the saved file name. */
+export async function writePdf(dest: FileSystemFileHandle | 'download', blob: Blob, fileName: string, download: (b: Blob, n: string) => void) {
+  if (dest === 'download') {
+    download(blob, fileName);
+    return { name: fileName, downloaded: true };
+  }
+  await writeTarget({ kind: 'handle', name: dest.name, handle: dest }, blob);
+  return { name: dest.name, downloaded: false };
+}
+
 /** Shows the Open dialog for project files. Returns null when the user cancels. */
 export async function pickProjectFile(): Promise<{ file: File; target: SaveTarget } | null> {
   try {

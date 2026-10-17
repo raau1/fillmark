@@ -8,6 +8,7 @@ import { useT } from '../i18n';
 import { Modal } from './Modal';
 import { isAnswered } from './FillPanel';
 import { baseName, downloadBlob, sanitizeFileName, todayIso } from './util';
+import { choosePdfDestination, writePdf } from '../state/fileSave';
 
 interface Props {
   pdf: Uint8Array;
@@ -47,7 +48,7 @@ export function ExportDialog(p: Props) {
   const [mode, setMode] = useState<ExportMode>('flatten');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState<{ warnings: string[] } | null>(null);
+  const [done, setDone] = useState<{ warnings: string[]; name: string; downloaded: boolean } | null>(null);
 
   const missing = useMemo(() => missingRequired(p.fields, p.values), [p.fields, p.values]);
   const overflow = useMemo(() => p.fields.filter((f) => p.overflowIds.has(f.id)), [p.fields, p.overflowIds]);
@@ -55,13 +56,23 @@ export function ExportDialog(p: Props) {
   const unreviewed = p.fields.filter((f) => f.source === 'detected' && !f.reviewed).length;
 
   const run = async () => {
-    setBusy(true);
     setError(null);
     setDone(null);
+    const fileName = sanitizeFileName(name, '.pdf');
+    // ask where to save first (the browser only allows the dialog right after the click)
+    let dest: Awaited<ReturnType<typeof choosePdfDestination>>;
+    try {
+      dest = await choosePdfDestination(fileName);
+    } catch (e) {
+      setError(t('Export failed: {msg}', { msg: (e as Error).message }));
+      return;
+    }
+    if (!dest) return; // cancelled
+    setBusy(true);
     try {
       const res = await exportInWorker(p.pdf, p.fields, p.values, mode, p.pages);
-      downloadBlob(new Blob([res.bytes as BlobPart], { type: 'application/pdf' }), sanitizeFileName(name, '.pdf'));
-      setDone({ warnings: res.warnings });
+      const saved = await writePdf(dest, new Blob([res.bytes as BlobPart], { type: 'application/pdf' }), fileName, downloadBlob);
+      setDone({ warnings: res.warnings, ...saved });
     } catch (e) {
       setError(t('Export failed: {msg}', { msg: (e as Error).message }));
     } finally {
@@ -165,7 +176,7 @@ export function ExportDialog(p: Props) {
           {done && (
             <div className="check-block ok" role="status">
               <p>
-                <CheckCircle2 size={16} /> {t('Downloaded “{name}”.', { name: sanitizeFileName(name, '.pdf') })}
+                <CheckCircle2 size={16} /> {done.downloaded ? t('Downloaded “{name}”.', { name: done.name }) : t('Saved “{name}”.', { name: done.name })}
               </p>
               {done.warnings.length > 0 && (
                 <ul>
@@ -185,7 +196,7 @@ export function ExportDialog(p: Props) {
         </button>
         <button className="btn primary" onClick={run} disabled={busy || !name.trim()}>
           {busy ? <LoaderCircle size={16} className="spin" /> : <Download size={16} />}
-          {busy ? t('Creating PDF…') : missing.length || overflow.length ? t('Download anyway') : t('Download PDF')}
+          {busy ? t('Creating PDF…') : missing.length || overflow.length ? t('Save anyway…') : t('Save PDF…')}
         </button>
       </div>
     </Modal>
