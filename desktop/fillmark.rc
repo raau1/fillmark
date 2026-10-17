@@ -1,0 +1,29 @@
+#define RT_MANIFEST 24
+
+1 ICON "fillmark.ico"
+1 RT_MANIFEST "fillmark.manifest"
+
+1 VERSIONINFO
+FILEVERSION 0,3,0,0
+PRODUCTVERSION 0,3,0,0
+FILEOS 0x40004
+FILETYPE 0x1
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040904B0"
+    BEGIN
+      VALUE "CompanyName", "Fillmark"
+      VALUE "FileDescription", "Fillmark - fill in PDF forms"
+      VALUE "FileVersion", "0.3.0"
+      VALUE "InternalName", "Fillmark"
+      VALUE "OriginalFilename", "Fillmark.exe"
+      VALUE "ProductName", "Fillmark"
+      VALUE "ProductVersion", "0.3.0"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x409, 1200
+  END
+END
