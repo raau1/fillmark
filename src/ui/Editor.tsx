@@ -26,7 +26,7 @@ import { patchField, useDocStore } from '../state/store';
 import { useT, useLang } from '../i18n';
 import { Viewer, useThumbnails, type ViewerHandle } from './Viewer';
 import { FieldLayer, type EditorMode, type Tool } from './FieldLayer';
-import { fieldOverflows } from './FieldContent';
+import { fieldOverflows, fieldSmallSize } from './FieldContent';
 import { Toolbox } from './Toolbox';
 import { PropertiesPanel } from './PropertiesPanel';
 import { FillPanel } from './FillPanel';
@@ -67,7 +67,7 @@ export function Editor({ initial, pdf, doc, measurer, formFieldCount, onClose }:
   const [viewport, setViewport] = useState({ width: 900, height: 700 });
   const [currentPage, setCurrentPage] = useState(0);
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [focusRequest, setFocusRequest] = useState<{ id: string; n: number } | null>(null);
+  const [focusRequest, setFocusRequest] = useState<{ id: string; n: number; focus: boolean } | null>(null);
   const [highlightFields, setHighlightFields] = useState(true);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
   const [exportOpen, setExportOpen] = useState(false);
@@ -167,6 +167,16 @@ export function Editor({ initial, pdf, doc, measurer, formFieldCount, onClose }:
     const s = new Set<string>();
     for (const f of fields) if (fieldOverflows(f, values, measurer)) s.add(f.id);
     return s;
+  }, [fields, values, measurer]);
+
+  /** fields whose text was shrunk below a comfortable reading size to fit (complete, but tiny) */
+  const smallSizes = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const f of fields) {
+      const size = fieldSmallSize(f, values, measurer);
+      if (size !== null) m.set(f.id, size);
+    }
+    return m;
   }, [fields, values, measurer]);
 
   const selectedFields = useMemo(() => fields.filter((f) => selection.includes(f.id)), [fields, selection]);
@@ -347,9 +357,14 @@ export function Editor({ initial, pdf, doc, measurer, formFieldCount, onClose }:
     [],
   );
 
+  const onReveal = useCallback((f: Field) => {
+    setActiveId(f.id);
+    setFocusRequest((r) => ({ id: f.id, n: (r?.n ?? 0) + 1, focus: false }));
+  }, []);
+
   const onActivate = useCallback((f: Field) => {
     setActiveId(f.id);
-    setFocusRequest((r) => ({ id: f.id, n: (r?.n ?? 0) + 1 }));
+    setFocusRequest((r) => ({ id: f.id, n: (r?.n ?? 0) + 1, focus: true }));
   }, []);
 
   const goToField = useCallback(
@@ -403,6 +418,7 @@ export function Editor({ initial, pdf, doc, measurer, formFieldCount, onClose }:
       onCreate={onCreate}
       onTransform={onTransform}
       onActivate={onActivate}
+      onReveal={onReveal}
       onHighlight={(f) => setActiveId(f.id)}
       onToggle={onToggle}
       onTextValue={(f, v) => setValue(f, v)}
@@ -495,7 +511,7 @@ export function Editor({ initial, pdf, doc, measurer, formFieldCount, onClose }:
           )}
           {mode === 'fill' && (
             <div className="fill-hint">
-              <span>{t('Click a box on the page or use the form on the right. Double-click a text box to type directly on the page.')}</span>
+              <span>{t('Click a box on the page to type in it or tick it, or use the form on the right.')}</span>
               <label className="switch">
                 <input type="checkbox" checked={highlightFields} onChange={(e) => setHighlightFields(e.target.checked)} />
                 <span>{t('Highlight fields')}</span>
@@ -592,6 +608,7 @@ export function Editor({ initial, pdf, doc, measurer, formFieldCount, onClose }:
               activeId={activeId}
               focusRequest={focusRequest}
               overflowIds={overflowIds}
+              smallSizes={smallSizes}
               onFocusField={revealField}
               onValue={setValue}
               onResetField={(f) =>
@@ -617,6 +634,7 @@ export function Editor({ initial, pdf, doc, measurer, formFieldCount, onClose }:
           pages={pages}
           fileName={meta.fileName}
           overflowIds={overflowIds}
+          smallSizes={smallSizes}
           onClose={() => setExportOpen(false)}
           onGoToField={(f) => {
             setExportOpen(false);

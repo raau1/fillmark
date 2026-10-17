@@ -16,6 +16,7 @@ interface Props {
   pages: PageInfo[];
   fileName: string;
   overflowIds: Set<string>;
+  smallSizes: Map<string, number>;
   onClose(): void;
   onGoToField(f: Field): void;
 }
@@ -50,6 +51,7 @@ export function ExportDialog(p: Props) {
 
   const missing = useMemo(() => missingRequired(p.fields, p.values), [p.fields, p.values]);
   const overflow = useMemo(() => p.fields.filter((f) => p.overflowIds.has(f.id)), [p.fields, p.overflowIds]);
+  const small = useMemo(() => p.fields.filter((f) => p.smallSizes.has(f.id)), [p.fields, p.smallSizes]);
   const unreviewed = p.fields.filter((f) => f.source === 'detected' && !f.reviewed).length;
 
   const run = async () => {
@@ -98,7 +100,7 @@ export function ExportDialog(p: Props) {
 
         <div className="checks" aria-live="polite">
           <h3>{t('Before you export')}</h3>
-          {missing.length === 0 && overflow.length === 0 && unreviewed === 0 && (
+          {missing.length === 0 && overflow.length === 0 && small.length === 0 && unreviewed === 0 && (
             <p className="check-ok">
               <CheckCircle2 size={16} /> {t('No problems found.')}
             </p>
@@ -117,6 +119,20 @@ export function ExportDialog(p: Props) {
                   </li>
                 ))}
                 {missing.length > 8 && <li className="muted">{t('and {n} more', { n: missing.length - 8 })}</li>}
+              </ul>
+            </div>
+          )}
+          {small.length > 0 && (
+            <div className="check-block">
+              <p>{t('Very small text in {n} fields (shrunk to fit; nothing is cut off):', { n: small.length })}</p>
+              <ul>
+                {small.slice(0, 8).map((f) => (
+                  <li key={f.id}>
+                    <button className="link" onClick={() => p.onGoToField(f)}>
+                      {f.name} <span className="muted">({t('page {n}', { n: f.page + 1 })}, {p.smallSizes.get(f.id)!.toLocaleString(undefined, { maximumFractionDigits: 1 })} pt)</span>
+                    </button>
+                  </li>
+                ))}
               </ul>
             </div>
           )}

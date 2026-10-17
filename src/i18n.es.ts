@@ -271,6 +271,10 @@ export const ES: Record<string, string> = {
   '{n} things to check': '{n} cosas que revisar',
   '{step}: page {page} ({done} of {total} done)': '{step}: página {page} ({done} de {total} hechas)',
   '— choose —': '— elegir —',
+  'Click a box on the page to type in it or tick it, or use the form on the right.': 'Haz clic en un recuadro de la página para escribir o marcarlo, o usa el formulario de la derecha.',
+  'Shrunk to {pt} pt to fit the box: it may be hard to read on paper. Shorten it or make the box bigger in Edit form if needed.':
+    'Reducido a {pt} pt para que quepa: puede costar leerlo en papel. Si hace falta, acórtalo o amplía el recuadro en Editar formulario.',
+  'Very small text in {n} fields (shrunk to fit; nothing is cut off):': 'Texto muy pequeño en {n} campos (reducido para que quepa; no se corta nada):',
   'The file is empty.': 'El archivo está vacío.',
   'The file is larger than {mb} MB.': 'El archivo supera los {mb} MB.',
   '“{name}” is not a PDF document.': '«{name}» no es un documento PDF.',

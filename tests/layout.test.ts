@@ -134,3 +134,40 @@ describe('values', () => {
     expect(isChecked(b, vals)).toBe(true);
   });
 });
+
+describe('shrink keeps everything visible', () => {
+  it('a long answer in a small notes box shrinks until all of it fits (nothing cut off)', () => {
+    const f = createField('multiline', 0, { x: 0, y: 0, w: 225.5, h: 38.5 });
+    const text = 'Refiere dificultades de atención desde la infancia, olvida citas y pierde objetos. '.repeat(14).trim();
+    const l = layoutText(f, text, m);
+    expect(l.overflow).toBe(false);
+    expect(l.visibleCount).toBe(l.lines.length);
+    expect(l.fontSize).toBeLessThan(4);
+    expect(l.small).toBe(true);
+    // every word is laid out, in order
+    expect(l.lines.map((x) => x.text).join(' ').replace(/\s+/g, ' ')).toBe(text.replace(/\s+/g, ' '));
+    // and the last line still sits inside the box
+    const last = l.lines[l.lines.length - 1];
+    expect(last.baseline + m.descent(l.family) * l.fontSize).toBeLessThanOrEqual(38.5);
+  });
+
+  it('a long one-line answer shrinks to the full width without being cut', () => {
+    const f = createField('text', 0, { x: 0, y: 0, w: 403, h: 18 });
+    const text = 'María del Carmen Fernández-Villaverde Rodríguez de la Fuente y Sánchez-Ñúñez, nacida en Santiago de Compostela el 3 de marzo';
+    const l = layoutText(f, text, m);
+    expect(l.overflow).toBe(false);
+    expect(l.lines[0].width).toBeLessThanOrEqual(403 - 2 * 2 + 0.01);
+    expect(l.lines[0].width).toBeGreaterThan(380); // uses the space: largest size that fits
+  });
+
+  it('normal answers are not marked as small', () => {
+    const f = createField('text', 0, { x: 0, y: 0, w: 403, h: 18 });
+    expect(layoutText(f, 'Ana López', m).small).toBe(false);
+  });
+
+  it('only impossible amounts of text (below 1 pt) still overflow', () => {
+    const f = createField('multiline', 0, { x: 0, y: 0, w: 40, h: 12 });
+    const l = layoutText(f, 'palabra '.repeat(2000), m);
+    expect(l.overflow).toBe(true);
+  });
+});

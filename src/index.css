@@ -970,17 +970,27 @@ input[type='radio'] {
 .rubber.create {
   border-style: solid;
 }
-.inline-editor {
+.field-layer .inline-editor {
   position: absolute;
   z-index: 5;
   border: 0;
   border-radius: 1px;
-  padding: 0 2px;
-  min-height: 0;
+  outline: none;
   background: rgba(255, 255, 255, 0.94);
   box-shadow: 0 0 0 2px var(--ink), 0 4px 14px -4px rgba(29, 35, 42, 0.35);
   resize: none;
   overflow: hidden;
+  font-kerning: none;
+  font-variant-ligatures: none;
+}
+.field-layer .inline-editor:not(.multi) {
+  min-height: 0 !important;
+}
+.field-layer .inline-editor.multi {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  field-sizing: content;
+  overflow-y: auto;
 }
 
 /* ---------- right panel ---------- */
@@ -1219,6 +1229,9 @@ input[type='radio'] {
 .field-msg.warn,
 .field-msg.error {
   color: var(--danger);
+}
+.field-msg.note {
+  color: var(--pencil);
 }
 .sig-thumb {
   height: 38px;

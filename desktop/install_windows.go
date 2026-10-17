@@ -22,10 +22,11 @@ import (
 var iconBytes []byte
 
 const (
-	uninstallKey = `Software\Microsoft\Windows\CurrentVersion\Uninstall\Fillmark`
-	classes      = `Software\Classes`
-	progProject  = "Fillmark.Project"
-	progPDF      = "Fillmark.PDF"
+	uninstallKey    = `Software\Microsoft\Windows\CurrentVersion\Uninstall\Fillmark`
+	classes         = `Software\Classes`
+	progProject     = "Fillmark.Project"
+	progPDF         = "Fillmark.PDF"
+	capabilitiesKey = `Software\Fillmark\Capabilities`
 )
 
 func installDir() string {
@@ -47,42 +48,47 @@ func currentExe() string {
 
 func samePath(a, b string) bool { return strings.EqualFold(filepath.Clean(a), filepath.Clean(b)) }
 
-func skipOfferFile() string { return filepath.Join(dataDir(), "run-without-installing") }
-
-func shouldOfferInstall() bool {
-	if samePath(currentExe(), installedExe()) {
-		return false
-	}
-	if _, err := os.Stat(skipOfferFile()); err == nil {
-		return false
-	}
-	return true
-}
-
-func offerInstall() installChoice {
-	_, err := os.Stat(installedExe())
-	update := err == nil
-	var msg string
-	if update {
-		msg = tr(
-			"Fillmark is already installed on this computer.\n\nYes: update the installed copy with this version.\nNo: just run this copy now.",
-			"Fillmark ya está instalado en este ordenador.\n\nSí: actualizar la copia instalada con esta versión.\nNo: solo ejecutar esta copia ahora.")
-	} else {
-		msg = tr(
-			"Install Fillmark on this computer?\n\n• Adds Fillmark to the Start menu and the desktop\n• Lets you open PDFs with Fillmark (right-click > Open with)\n• Opens .fillmark project files with a double-click\n\nNo administrator rights are needed. You can uninstall it from Settings > Apps.\n\nYes: install.   No: just run it this time.",
-			"¿Instalar Fillmark en este ordenador?\n\n• Añade Fillmark al menú Inicio y al escritorio\n• Permite abrir PDF con Fillmark (clic derecho > Abrir con)\n• Abre los proyectos .fillmark con doble clic\n\nNo hacen falta permisos de administrador. Se puede desinstalar desde Configuración > Aplicaciones.\n\nSí: instalar.   No: solo ejecutarlo esta vez.")
-	}
-	switch messageBox(appName, msg, mbYesNoCancel|mbIconQuestion) {
-	case idYes:
-		return installChosen
-	case idNo:
-		if !update {
-			_ = os.MkdirAll(dataDir(), 0o700)
-			_ = os.WriteFile(skipOfferFile(), []byte("The user chose to run Fillmark without installing. Delete this file to be asked again.\n"), 0o600)
+// routeLaunch decides what a double-click on Fillmark.exe does. It returns true
+// when this process has handed over to the installed copy (or the user cancelled)
+// and must exit. No dialog ever asks the user to press "No" to open the app:
+//   - running the installed copy: repair its Windows registration if needed, then open;
+//   - running a downloaded copy, Fillmark not installed: one OK/Cancel question to install;
+//   - downloaded copy newer than the installed one: update silently, then open;
+//   - downloaded copy same or older: just open the installed Fillmark.
+func routeLaunch(files []string) bool {
+	dst := installedExe()
+	if samePath(currentExe(), dst) {
+		if regReadString(syscall.HKEY_CURRENT_USER, uninstallKey, "DisplayVersion") != appVersion {
+			register(dst, false) // self-repair after an interrupted install or an update
 		}
-		return runWithoutInstalling
+		return false
+	}
+	_, err := os.Stat(dst)
+	installedVersion := regReadString(syscall.HKEY_CURRENT_USER, uninstallKey, "DisplayVersion")
+	switch {
+	case err != nil || installedVersion == "":
+		msg := tr(
+			"Fillmark will be installed for your Windows user:\n\n• in the Start menu and on the desktop\n• in \u201cOpen with\u201d when you right-click a PDF\n• .fillmark project files will open with a double-click\n\nNo administrator rights are needed. You can uninstall it any time from Settings > Apps.",
+			"Fillmark se instalará para tu usuario de Windows:\n\n• en el menú Inicio y en el escritorio\n• en \u201cAbrir con\u201d al hacer clic derecho en un PDF\n• los proyectos .fillmark se abrirán con doble clic\n\nNo hacen falta permisos de administrador. Se puede desinstalar cuando quieras desde Configuración > Aplicaciones.")
+		if messageBox(tr("Install Fillmark", "Instalar Fillmark"), msg, mbOKCancel|mbIconInformation) != idOK {
+			return true
+		}
+		if exe, ok := install(); ok {
+			messageBox(appName, tr(
+				"Fillmark is installed.\n\nOpen it from the Start menu or the desktop, or right-click a PDF and choose Open with > Fillmark.\n\nYou can delete the file you downloaded.",
+				"Fillmark está instalado.\n\nÁbrelo desde el menú Inicio o el escritorio, o haz clic derecho en un PDF y elige Abrir con > Fillmark.\n\nYa puedes borrar el archivo que descargaste."),
+				mbOK|mbIconInformation)
+			startDetached(exe, files)
+		}
+		return true
+	case compareVersions(appVersion, installedVersion) > 0:
+		if exe, ok := install(); ok {
+			startDetached(exe, files)
+		}
+		return true
 	default:
-		return installCancelled
+		startDetached(dst, files)
+		return true
 	}
 }
 
@@ -112,8 +118,9 @@ func copyFile(src, dst string) error {
 // instanceRunning reports whether a Fillmark window server is active.
 func instanceRunning() bool { return pingRunning(readRunInfo()) }
 
-// install copies the program and registers it. Returns the installed exe path.
-func install(explicit bool) (string, bool) {
+// install copies this program to its folder and registers it with Windows.
+// Returns the installed exe path.
+func install() (string, bool) {
 	src := currentExe()
 	dst := installedExe()
 	if err := os.MkdirAll(installDir(), 0o755); err != nil {
@@ -123,13 +130,21 @@ func install(explicit bool) (string, bool) {
 	if !samePath(src, dst) {
 		if err := copyFile(src, dst); err != nil {
 			if instanceRunning() {
-				showError(tr("Close all Fillmark windows and try again.", "Cierra todas las ventanas de Fillmark y vuelve a intentarlo."))
+				showError(tr("Fillmark is open. Close every Fillmark window, then run this file again to update it.",
+					"Fillmark está abierto. Cierra todas sus ventanas y vuelve a ejecutar este archivo para actualizarlo."))
 			} else {
 				showError(tr("Could not copy Fillmark to its program folder: ", "No se pudo copiar Fillmark a su carpeta: ") + err.Error())
 			}
 			return "", false
 		}
 	}
+	register(dst, true)
+	return dst, true
+}
+
+// register creates the shortcuts and Windows registrations for the installed exe.
+// Registry entries are written first (plain API calls); shortcuts last.
+func register(dst string, reportProblems bool) {
 	icon := filepath.Join(installDir(), "fillmark.ico")
 	_ = os.WriteFile(icon, iconBytes, 0o644)
 
@@ -139,36 +154,35 @@ func install(explicit bool) (string, bool) {
 			problems = append(problems, err.Error())
 		}
 	}
-
-	// shortcuts
-	if dir, err := knownFolder(&folderPrograms); err == nil {
-		note(createShortcut(filepath.Join(dir, appName+".lnk"), dst, installDir(), icon, tr("Fill in PDF forms", "Rellenar formularios PDF")))
-	} else {
-		note(err)
-	}
-	if dir, err := knownFolder(&folderDesktop); err == nil {
-		note(createShortcut(filepath.Join(dir, appName+".lnk"), dst, installDir(), icon, tr("Fill in PDF forms", "Rellenar formularios PDF")))
-	} else {
-		note(err)
-	}
-
 	open := fmt.Sprintf(`"%s" "%%1"`, dst)
+	app := classes + `\Applications\Fillmark.exe`
 	// .fillmark project files open with Fillmark on double-click
 	for _, ext := range append([]string{projectExt}, legacyProjectExts...) {
 		note(regSetString(classes+`\`+ext, "", progProject))
-		note(regSetString(classes+`\Applications\Fillmark.exe\SupportedTypes`, ext, ""))
+		note(regSetString(app+`\SupportedTypes`, ext, ""))
 	}
 	note(regSetString(classes+`\`+progProject, "", tr("Fillmark project", "Proyecto de Fillmark")))
 	note(regSetString(classes+`\`+progProject+`\DefaultIcon`, "", icon))
 	note(regSetString(classes+`\`+progProject+`\shell\open\command`, "", open))
-	// PDFs: offered in "Open with", without changing the default PDF program
+	// PDFs: listed under "Open with", without changing the default PDF program
 	note(regSetString(classes+`\`+progPDF, "", tr("PDF document", "Documento PDF")))
+	note(regSetString(classes+`\`+progPDF, "FriendlyTypeName", tr("PDF document", "Documento PDF")))
 	note(regSetString(classes+`\`+progPDF+`\DefaultIcon`, "", icon))
+	note(regSetString(classes+`\`+progPDF+`\shell\open`, "FriendlyAppName", appName))
 	note(regSetString(classes+`\`+progPDF+`\shell\open\command`, "", open))
 	note(regSet(hkeyCurrentUser, classes+`\.pdf\OpenWithProgids`, progPDF, regNone, nil))
-	note(regSetString(classes+`\Applications\Fillmark.exe`, "FriendlyAppName", appName))
-	note(regSetString(classes+`\Applications\Fillmark.exe\shell\open\command`, "", open))
-	note(regSetString(classes+`\Applications\Fillmark.exe\SupportedTypes`, ".pdf", ""))
+	note(regSet(hkeyCurrentUser, classes+`\.pdf\OpenWithList\Fillmark.exe`, "", regSZ, ""))
+	note(regSetString(app, "FriendlyAppName", appName))
+	note(regSetString(app+`\DefaultIcon`, "", icon))
+	note(regSetString(app+`\shell\open\command`, "", open))
+	note(regSetString(app+`\SupportedTypes`, ".pdf", ""))
+	// "Default apps" in Settings knows about Fillmark (the user decides there)
+	note(regSetString(capabilitiesKey, "ApplicationName", appName))
+	note(regSetString(capabilitiesKey, "ApplicationDescription", tr("Fill in PDF forms", "Rellenar formularios PDF")))
+	note(regSetString(capabilitiesKey, "ApplicationIcon", icon))
+	note(regSetString(capabilitiesKey+`\FileAssociations`, ".pdf", progPDF))
+	note(regSetString(capabilitiesKey+`\FileAssociations`, projectExt, progProject))
+	note(regSetString(`Software\RegisteredApplications`, appName, capabilitiesKey))
 	// Settings > Apps entry
 	note(regSetString(uninstallKey, "DisplayName", appName))
 	note(regSetString(uninstallKey, "DisplayVersion", appVersion))
@@ -182,16 +196,21 @@ func install(explicit bool) (string, bool) {
 		note(regSetDWORD(uninstallKey, "EstimatedSize", uint32(st.Size()/1024)))
 	}
 	notifyAssociationsChanged()
-	_ = os.Remove(skipOfferFile())
 
-	if len(problems) > 0 {
+	// shortcuts
+	desc := tr("Fill in PDF forms", "Rellenar formularios PDF")
+	for _, f := range []*guid{&folderPrograms, &folderDesktop} {
+		if dir, err := knownFolder(f); err == nil {
+			note(createShortcut(filepath.Join(dir, appName+".lnk"), dst, installDir(), icon, desc))
+		} else {
+			note(err)
+		}
+	}
+
+	if reportProblems && len(problems) > 0 {
 		messageBox(appName, tr("Fillmark was installed, but some shortcuts or file associations could not be created:\n\n",
 			"Fillmark se ha instalado, pero no se han podido crear algunos accesos directos o asociaciones de archivos:\n\n")+strings.Join(problems, "\n"), mbOK|mbIconWarning)
-	} else if explicit {
-		messageBox(appName, tr("Fillmark is installed. You will find it in the Start menu and on the desktop.",
-			"Fillmark está instalado. Lo encontrarás en el menú Inicio y en el escritorio."), mbOK|mbIconInformation)
 	}
-	return dst, true
 }
 
 func uninstall() {
@@ -216,6 +235,9 @@ func uninstall() {
 	regDeleteTree(classes + `\` + progPDF)
 	regDeleteTree(classes + `\Applications\Fillmark.exe`)
 	regDeleteValue(classes+`\.pdf\OpenWithProgids`, progPDF)
+	regDeleteTree(classes + `\.pdf\OpenWithList\Fillmark.exe`)
+	regDeleteValue(`Software\RegisteredApplications`, appName)
+	regDeleteTree(`Software\Fillmark`)
 	for _, ext := range append([]string{projectExt}, legacyProjectExts...) {
 		if regReadString(syscall.HKEY_CURRENT_USER, classes+`\`+ext, "") == progProject {
 			regDeleteTree(classes + `\` + ext)
@@ -256,6 +278,7 @@ func migrateLegacy() {
 	if local == "" {
 		return
 	}
+	_ = os.Remove(filepath.Join(dataDir(), "run-without-installing")) // marker used by 0.3.0
 	changed := false
 	for _, old := range legacyNames {
 		oldData := filepath.Join(local, old)

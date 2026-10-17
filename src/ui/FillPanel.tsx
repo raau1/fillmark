@@ -10,8 +10,9 @@ interface Props {
   fields: Field[];
   values: Values;
   activeId: string | null;
-  focusRequest: { id: string; n: number } | null;
+  focusRequest: { id: string; n: number; focus: boolean } | null;
   overflowIds: Set<string>;
+  smallSizes: Map<string, number>;
   onFocusField(f: Field): void;
   onValue(f: Field, v: string | boolean, key?: string): void;
   onResetField(f: Field): void;
@@ -64,7 +65,7 @@ export function FillPanel(p: Props) {
     const el = listRef.current?.querySelector<HTMLElement>(`[data-input-for="${p.focusRequest.id}"]`);
     if (el) {
       el.scrollIntoView({ block: 'center', behavior: 'smooth' });
-      el.focus({ preventScroll: true });
+      if (p.focusRequest.focus) el.focus({ preventScroll: true });
     }
   }, [p.focusRequest]);
 
@@ -138,7 +139,7 @@ export function FillPanel(p: Props) {
   );
 }
 
-function FieldInput({ field: f, values, activeId, overflowIds, onFocusField, onValue, onResetField, onSign }: Props & { field: Field; onSign: (f: Field) => void }) {
+function FieldInput({ field: f, values, activeId, overflowIds, smallSizes, onFocusField, onValue, onResetField, onSign }: Props & { field: Field; onSign: (f: Field) => void }) {
   const t = useT();
   const v = effectiveValue(f, values);
   const active = activeId === f.id;
@@ -218,6 +219,13 @@ function FieldInput({ field: f, values, activeId, overflowIds, onFocusField, onV
       {overflowIds.has(f.id) && (
         <p className="field-msg warn">
           <TriangleAlert size={13} /> {t('Too long for the box: the end will be cut off. Shorten it or enlarge the box in Edit form.')}
+        </p>
+      )}
+      {smallSizes.has(f.id) && (
+        <p className="field-msg note">
+          {t('Shrunk to {pt} pt to fit the box: it may be hard to read on paper. Shorten it or make the box bigger in Edit form if needed.', {
+            pt: smallSizes.get(f.id)!.toLocaleString(undefined, { maximumFractionDigits: 1 }),
+          })}
         </p>
       )}
     </div>

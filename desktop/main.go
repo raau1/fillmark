@@ -11,7 +11,7 @@
 //	Fillmark.exe [file.pdf | project.fillmark ...]
 //	Fillmark.exe --install     install for the current user (no admin rights needed)
 //	Fillmark.exe --uninstall   remove shortcuts, file associations and the program
-//	Fillmark.exe --portable    run without offering to install
+//	Fillmark.exe --portable    run this copy without installing
 //	Fillmark.exe --serve       (testing) serve without opening a window, print the URL
 package main
 
@@ -32,7 +32,7 @@ var distFS embed.FS
 
 const (
 	appName    = "Fillmark"
-	appVersion = "0.3.0"
+	appVersion = "0.3.1"
 	projectExt = ".fillmark"
 )
 
@@ -84,22 +84,15 @@ func main() {
 		uninstall()
 		return
 	case opts["--install"]:
-		if exe, ok := install(true); ok {
+		if exe, ok := install(); ok {
 			startDetached(exe, files)
 		}
 		return
 	}
 
-	if !opts["--portable"] && !opts["--serve"] && shouldOfferInstall() {
-		switch offerInstall() {
-		case installChosen:
-			if exe, ok := install(false); ok {
-				startDetached(exe, files)
-				return
-			}
-		case installCancelled:
-			return
-		}
+	// install / update / hand over to the installed copy (Windows); --portable runs this copy as is
+	if !opts["--portable"] && !opts["--serve"] && routeLaunch(files) {
+		return
 	}
 
 	for _, f := range files {

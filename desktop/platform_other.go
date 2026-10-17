@@ -30,14 +30,13 @@ func openWindow(u string) error {
 	return exec.Command("xdg-open", u).Start()
 }
 
-func showError(msg string)        { fmt.Fprintln(os.Stderr, "Fillmark:", msg) }
-func shouldOfferInstall() bool    { return false }
-func offerInstall() installChoice { return runWithoutInstalling }
-func install(bool) (string, bool) {
+func showError(msg string) { fmt.Fprintln(os.Stderr, "Fillmark:", msg) }
+func install() (string, bool) {
 	showError("installation is only available on Windows")
 	return "", false
 }
 func uninstall()                           { showError("uninstallation is only available on Windows") }
 func startDetached(exe string, f []string) { _ = exec.Command(exe, f...).Start() }
 
-func migrateLegacy() {}
+func migrateLegacy()            {}
+func routeLaunch([]string) bool { return false }
