@@ -71,7 +71,13 @@ npm run preview      # serves dist/ at http://localhost:4173
    - **Editable form**: answers stay in real PDF form fields.
    The dialog warns about empty required fields, text that does not fit, and unchecked suggestions.
 
-**Saving work.** Projects (the PDF, field definitions and answers) are saved automatically in this browser's storage (IndexedDB). Browser storage can be cleared, so use **Save project file** to download a `.fillmark` file that you can reopen later on any computer via *Open a project file…*. Saving a project is separate from exporting the completed PDF.
+**Saving work.** Projects (the PDF, field definitions and answers) are saved automatically in this browser's storage (IndexedDB). Browser storage can be cleared, so keep your work in a `.fillmark` project file as well:
+
+- **Save** (Ctrl+S) writes the project to its file. The first time, it asks where to save; after that it overwrites the same file, like any desktop program. A project opened from a file (double-clicked in Explorer, *Open a project file…*, or dropped on the window) saves back to that file. The status line says *Saved to …* or *Changes not saved to …*, and Fillmark warns before closing with unsaved changes.
+- **Save as…** (Ctrl+Shift+S) always asks for a new name or place.
+- In browsers without file access (Firefox, Safari), Save downloads a copy instead.
+
+Saving a project is separate from exporting the completed PDF.
 
 ## Privacy
 
@@ -135,7 +141,7 @@ On the 15-page example (A4, no text layer, no form fields):
 - **Rotated text inside a field** (other than following the page rotation) is not supported.
 - Very large documents work (pages are rendered lazily and released when far from view), but detection on hundreds of pages takes proportionally longer.
 - The UI is in English and Spanish (switch with the EN/ES button).
-- **Desktop app**: `Fillmark.exe` is not code-signed, so Windows SmartScreen warns on first run. The Windows-only parts (installer dialogs, shortcuts, registry entries, launching Edge) are built on Linux: they compile and pass static checks and unit tests, but the automated tests cannot run them. Version 0.3.0 had an installer bug that was found on Windows (it stopped before creating the shortcuts and “Open with” entry); 0.3.1 fixes it. The server, window hand-over and app inside it are tested through a Linux build of the same launcher. The window is an Edge/Chrome app window: Edge itself follows your Windows/Edge settings (updates, diagnostic data); Fillmark never sends document data anywhere.
+- **Desktop app**: `Fillmark.exe` is not code-signed, so Windows SmartScreen warns on first run. The Windows-only parts (installer dialogs, shortcuts, registry entries, launching Edge) are built on Linux: they compile and pass static checks and unit tests, but the automated tests cannot run them. Version 0.3.0 had an installer bug that was found on Windows (it stopped before creating the shortcuts and “Open with” entry); 0.3.1 fixes it. Saving back to a file opened from Explorer goes through the local launcher, which only writes to project files that were opened through it. The server, window hand-over and app inside it are tested through a Linux build of the same launcher. The window is an Edge/Chrome app window: Edge itself follows your Windows/Edge settings (updates, diagnostic data); Fillmark never sends document data anywhere.
 
 ## Project structure
 

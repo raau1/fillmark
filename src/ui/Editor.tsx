@@ -3,7 +3,7 @@ import {
   CheckSquare,
   Eye,
   FileDown,
-  FolderDown,
+  Save,
   Home,
   Maximize,
   MoveHorizontal,
@@ -21,7 +21,8 @@ import { isChecked, valueKey } from '../core/layout';
 import { clampRectToPage } from '../core/coords';
 import type { Field, FieldType, PageInfo, ProjectData, Rect, Values } from '../core/types';
 import type { PDFDocumentProxy } from '../pdf/pdfjs';
-import { saveProject, projectFileBlob, PROJECT_FILE_EXT } from '../state/persistence';
+import { getSaveTarget, saveProject, setSaveTarget, projectFileBlob, PROJECT_FILE_EXT, type SaveTarget } from '../state/persistence';
+import { canChooseFiles, chooseSaveTarget, SaveError, writeTarget } from '../state/fileSave';
 import { patchField, useDocStore } from '../state/store';
 import { useT, useLang } from '../i18n';
 import { Viewer, useThumbnails, type ViewerHandle } from './Viewer';
@@ -119,11 +120,30 @@ export function Editor({ initial, pdf, doc, measurer, formFieldCount, onClose }:
   const dataRef = useRef<ProjectData | null>(null);
   dataRef.current = { meta, pages, fields, values, settings };
   const firstSave = useRef(true);
+  // edits since the project was last written to its file ("Save")
+  const [editCount, setEditCount] = useState(0);
+  const editCountRef = useRef(0);
+  const [savedEditCount, setSavedEditCount] = useState(0);
+  const [target, setTarget] = useState<SaveTarget | null>(null);
+  const [fileBusy, setFileBusy] = useState(false);
+  useEffect(() => {
+    getSaveTarget(initial.meta.id).then((dest) => {
+      if (!dest) return;
+      setTarget(dest);
+      // changes kept in this browser after the last Save to the file
+      if (dest.savedAt && initial.meta.updatedAt > dest.savedAt + 1500) setSavedEditCount(-1);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const fileDirty = !!target && editCount !== savedEditCount;
+
   useEffect(() => {
     if (firstSave.current) {
       firstSave.current = false;
       return;
     }
+    editCountRef.current += 1;
+    setEditCount(editCountRef.current);
     setSaveStatus('unsaved');
     const timer = setTimeout(async () => {
       setSaveStatus('saving');
@@ -142,14 +162,14 @@ export function Editor({ initial, pdf, doc, measurer, formFieldCount, onClose }:
   // warn before closing the tab with unsaved changes
   useEffect(() => {
     const h = (e: BeforeUnloadEvent) => {
-      if (saveStatus === 'unsaved' || saveStatus === 'saving') {
+      if (saveStatus === 'unsaved' || saveStatus === 'saving' || fileDirty) {
         e.preventDefault();
         e.returnValue = '';
       }
     };
     window.addEventListener('beforeunload', h);
     return () => window.removeEventListener('beforeunload', h);
-  }, [saveStatus]);
+  }, [saveStatus, fileDirty]);
 
   const flash = useCallback((msg: string) => {
     setToast(msg);
@@ -285,10 +305,16 @@ export function Editor({ initial, pdf, doc, measurer, formFieldCount, onClose }:
   );
 
   // ---------------------------------------------------------------- keyboard
+  const saveRef = useRef<(saveAs: boolean) => void>(() => {});
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.ctrlKey || e.metaKey;
       const typing = isTypingTarget(e.target);
+      if (mod && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        saveRef.current(e.shiftKey);
+        return;
+      }
       if (mod && !typing && e.key.toLowerCase() === 'z') {
         e.preventDefault();
         if (e.shiftKey) api.redo();
@@ -376,11 +402,51 @@ export function Editor({ initial, pdf, doc, measurer, formFieldCount, onClose }:
   );
 
   // ---------------------------------------------------------------- project file
-  const downloadProjectFile = useCallback(() => {
-    const d = dataRef.current!;
-    downloadBlob(projectFileBlob(d, pdf), `${baseName(meta.fileName)}${PROJECT_FILE_EXT}`);
-    flash(t('Project file downloaded. Keep it somewhere safe: it contains the PDF and every answer.'));
-  }, [pdf, meta.fileName, flash, t]);
+  /** Save: write the project to its file (asking where the first time). Save as: always ask. */
+  const saveToFile = useCallback(
+    async (saveAs: boolean) => {
+      if (fileBusy) return;
+      const suggested = `${baseName(meta.name || meta.fileName)}${PROJECT_FILE_EXT}`;
+      let dest = saveAs ? null : target;
+      if (!dest) {
+        if (!canChooseFiles()) {
+          // browsers without file access: download a copy instead
+          downloadBlob(projectFileBlob(dataRef.current!, pdf), suggested);
+          flash(t('Project file downloaded. Keep it somewhere safe: it contains the PDF and every answer.'));
+          return;
+        }
+        try {
+          dest = await chooseSaveTarget(suggested);
+        } catch (e) {
+          flash(t('Could not save: {msg}', { msg: (e as Error).message }));
+          return;
+        }
+        if (!dest) return; // cancelled
+      }
+      setFileBusy(true);
+      const countAtSave = editCountRef.current;
+      try {
+        const now = Date.now();
+        const d = dataRef.current!;
+        await writeTarget(dest, projectFileBlob({ ...d, meta: { ...d.meta, updatedAt: now } }, pdf));
+        const saved = { ...dest, savedAt: now };
+        setTarget(saved);
+        setSavedEditCount(countAtSave);
+        await setSaveTarget(meta.id, saved);
+        flash(t('Saved to {name}', { name: dest.name }));
+      } catch (e) {
+        if (e instanceof SaveError && e.code === 'permission') {
+          flash(t('Fillmark was not allowed to write to {name}. Use Save as… to choose where to save.', { name: dest.name }));
+        } else {
+          flash(t('Could not save to {name}: {msg}', { name: dest.name, msg: (e as Error).message }));
+        }
+      } finally {
+        setFileBusy(false);
+      }
+    },
+    [fileBusy, meta.name, meta.fileName, meta.id, target, pdf, flash, t],
+  );
+  saveRef.current = (saveAs) => void saveToFile(saveAs);
 
   const addFields = useCallback(
     (newFields: Field[], newValues: Values = {}, opts: { hideOriginals?: boolean } = {}) => {
@@ -438,8 +504,14 @@ export function Editor({ initial, pdf, doc, measurer, formFieldCount, onClose }:
             aria-label={t('Project name')}
             onChange={(e) => setMeta((m) => ({ ...m, name: e.target.value }))}
           />
-          <span className={cx('save-status', saveStatus)} role="status" aria-live="polite">
-            {statusText[saveStatus]}
+          <span className={cx('save-status', saveStatus === 'error' ? 'error' : target ? (fileDirty ? 'unsaved' : 'saved') : saveStatus)} role="status" aria-live="polite">
+            {saveStatus === 'error'
+              ? statusText.error
+              : target
+                ? fileDirty
+                  ? t('Changes not saved to {name}', { name: target.name })
+                  : t('Saved to {name}', { name: target.name })
+                : statusText[saveStatus]}
           </span>
         </div>
 
@@ -465,9 +537,17 @@ export function Editor({ initial, pdf, doc, measurer, formFieldCount, onClose }:
           <button className="icon-btn" onClick={api.redo} disabled={!state.future.length} title={t('Redo (Ctrl+Shift+Z)')} aria-label={t('Redo')}>
             <Redo2 size={18} />
           </button>
-          <button className="btn ghost" onClick={downloadProjectFile} title={t('Download a project file you can reopen later on any computer')}>
-            <FolderDown size={16} />
-            <span className="hide-sm">{t('Save project file')}</span>
+          <button
+            className={cx('btn ghost save-btn', fileDirty && 'dirty')}
+            onClick={() => saveToFile(false)}
+            disabled={fileBusy}
+            title={target ? t('Save to {name} (Ctrl+S)', { name: target.name }) : t('Save as a project file you can reopen later (Ctrl+S)')}
+          >
+            <Save size={16} />
+            <span>{t('Save')}</span>
+          </button>
+          <button className="btn ghost hide-sm" onClick={() => saveToFile(true)} disabled={fileBusy} title={t('Save a copy under a new name (Ctrl+Shift+S)')}>
+            {t('Save as…')}
           </button>
           <button className="btn primary" onClick={() => setExportOpen(true)}>
             <FileDown size={16} />

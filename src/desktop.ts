@@ -43,15 +43,17 @@ function read(): DesktopContext | null {
 /** Evaluated once at start-up (before React renders twice in development). */
 export const DESKTOP: DesktopContext | null = read();
 
-/** Fetches the file the window was opened for, if any (only once per window). */
-export async function takeLaunchFile(): Promise<File | null> {
+/** Fetches the file the window was opened for, if any (only once per window).
+ *  `path` is set for project files: Save writes back into them through the launcher. */
+export async function takeLaunchFile(): Promise<{ file: File; path: string | null } | null> {
   if (!DESKTOP?.openId) return null;
   const id = DESKTOP.openId;
   DESKTOP.openId = null;
   const res = await fetch(`./__file/${encodeURIComponent(id)}`, { headers: { 'X-Fillmark-Token': DESKTOP.token }, cache: 'no-store' });
   if (!res.ok) throw new Error(res.status === 404 ? 'The file is no longer available. Open it again.' : `The file could not be loaded (${res.status}).`);
   const name = decodeURIComponent(res.headers.get('X-Fillmark-Name') ?? 'document.pdf');
-  return new File([await res.arrayBuffer()], name);
+  const path = res.headers.get('X-Fillmark-Path');
+  return { file: new File([await res.arrayBuffer()], name), path: path ? decodeURIComponent(path) : null };
 }
 
 let started = false;

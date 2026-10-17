@@ -499,11 +499,79 @@ check('preview offers the same flattened PDF for download', () => {
   assert.equal(Buffer.compare(a.data, c.data), 0);
 });
 
-// ---------- project file: download, then open it in a fresh browser profile
-log('project file round trip');
+// ---------- Save / Save as: write the project to a file, then Ctrl+S writes back to the same file
+log('save to file');
 await page.click('.mode-btn:nth-child(2)');
-await page.click('.topbar .btn.ghost');
-const projFile = await waitForFile(DL, (n) => n.endsWith('.fillmark'), 30000);
+await page.evaluate(() => {
+  // a stand-in for the system Save dialog: records what Fillmark writes
+  window.__pickerCalls = 0;
+  window.__saves = [];
+  window.showSaveFilePicker = async (o) => {
+    window.__pickerCalls++;
+    const h = {
+      kind: 'file',
+      name: o.suggestedName,
+      queryPermission: async () => 'granted',
+      createWritable: async () => {
+        const parts = [];
+        return {
+          write: async (b) => parts.push(b),
+          close: async () => window.__saves.push({ name: h.name, text: await new Blob(parts).text() }),
+          abort: async () => {},
+        };
+      },
+    };
+    return h;
+  };
+});
+const statusNow = () => page.$eval('.save-status', (e) => e.textContent.trim());
+const saveState = () => page.evaluate(() => ({ calls: window.__pickerCalls, saves: window.__saves.length, name: window.__saves.at(-1)?.name }));
+await page.click('.topbar .save-btn');
+await page.waitForFunction(() => window.__saves.length === 1, { timeout: 30000 });
+await sleep(300);
+const first = { ...(await saveState()), status: await statusNow() };
+check('Save asks where to save the first time and writes a .fillmark project file', () => {
+  assert.equal(first.calls, 1);
+  assert.ok(first.name.endsWith('.fillmark'), first.name);
+  assert.equal(first.status, `Saved to ${first.name}`);
+});
+// make a change (type a letter), then take it back out: the file is now out of date
+await page.click('.fill-field input[type=text]');
+await page.keyboard.press('End');
+await page.keyboard.type('x');
+await sleep(300);
+const dirtyStatus = await statusNow();
+const dirtyBtn = await page.$eval('.topbar .save-btn', (e) => e.classList.contains('dirty'));
+await page.keyboard.press('Backspace');
+await sleep(300);
+check('after a change the status says the file has unsaved changes', () => {
+  assert.equal(dirtyStatus, `Changes not saved to ${first.name}`);
+  assert.ok(dirtyBtn);
+});
+await page.keyboard.down('Control');
+await page.keyboard.press('s');
+await page.keyboard.up('Control');
+await page.waitForFunction(() => window.__saves.length === 2, { timeout: 30000 });
+await sleep(300);
+const second = { ...(await saveState()), status: await statusNow() };
+check('Ctrl+S saves to the same file again without asking', () => {
+  assert.equal(second.calls, 1);
+  assert.equal(second.name, first.name);
+  assert.equal(second.status, `Saved to ${first.name}`);
+});
+// Save as… always asks
+await page.click('.topbar .save-btn + .btn.ghost');
+await page.waitForFunction(() => window.__saves.length === 3, { timeout: 30000 });
+{
+  const third = await saveState();
+  check('Save as… asks again', () => assert.equal(third.calls, 2));
+}
+const projFile = join(DL, 'saved-project.fillmark');
+writeFileSync(projFile, await page.evaluate(() => window.__saves[1].text));
+await sleep(1500); // let the browser autosave settle before leaving the page
+
+// ---------- project file: open the saved file in a fresh browser profile
+log('project file round trip');
 {
   // wipe this browser's storage (as if on another computer), then open the project file
   await page.goto(URL_, { waitUntil: 'networkidle0' });

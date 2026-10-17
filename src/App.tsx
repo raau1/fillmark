@@ -5,7 +5,7 @@ import { uid } from './core/fieldFactory';
 import { closePdf, openPdf, readPageInfos, validatePdfBytes, PdfOpenError, type PDFDocumentProxy } from './pdf/pdfjs';
 import { loadMeasurer } from './pdf/fontAssets';
 import { probeInWorker } from './pdf/workerClient';
-import { isProjectFileName, loadProject, parseProjectFile, requestPersistentStorage, saveProject } from './state/persistence';
+import { isProjectFileName, loadProject, parseProjectFile, requestPersistentStorage, saveProject, setSaveTarget, type SaveTarget } from './state/persistence';
 import { LangProvider, useT } from './i18n';
 import { Home } from './ui/Home';
 import { Editor } from './ui/Editor';
@@ -43,7 +43,7 @@ function Shell() {
 
   /** Opens bytes as a project; checks that pdf.js can render it and pdf-lib can write it. */
   const openBytes = useCallback(
-    async (pdf: Uint8Array, existing: ProjectData | null, fileName: string) => {
+    async (pdf: Uint8Array, existing: ProjectData | null, fileName: string, target?: SaveTarget | null) => {
       validatePdfBytes(pdf, fileName);
       const doc = await openPdf(pdf);
       const pages = await readPageInfos(doc);
@@ -76,6 +76,8 @@ function Shell() {
       } catch {
         /* storage unavailable: the editor shows the save state and offers the project file */
       }
+      // a project opened from a file saves back into that file
+      if (target) await setSaveTarget(data.meta.id, { ...target, savedAt: Date.now() });
       setSession({ data, pdf, doc, formFieldCount: probe.fieldCount });
     },
     [t],
@@ -106,10 +108,10 @@ function Shell() {
     [guard, openBytes, t],
   );
   const openProjectFile = useCallback(
-    (file: File) =>
+    (file: File, target?: SaveTarget | null) =>
       guard(t('Opening {name}…', { name: file.name }), async () => {
         const { data, pdf } = await parseProjectFile(file);
-        await openBytes(pdf, data, data.meta.fileName);
+        await openBytes(pdf, data, data.meta.fileName, target ?? null);
       }),
     [guard, openBytes, t],
   );
@@ -123,9 +125,10 @@ function Shell() {
     launched.current = true;
     (async () => {
       try {
-        const file = await takeLaunchFile();
-        if (!file) return;
-        if (isProjectFileName(file.name)) openProjectFile(file);
+        const launch = await takeLaunchFile();
+        if (!launch) return;
+        const { file, path } = launch;
+        if (isProjectFileName(file.name)) openProjectFile(file, path ? { kind: 'launcher', name: file.name, path } : null);
         else openPdfFile(file);
       } catch (e) {
         setError((e as Error).message);

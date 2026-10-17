@@ -53,14 +53,16 @@ var mimeTypes = map[string]string{
 
 type openFile struct {
 	name  string
+	path  string // absolute path on disk
 	data  []byte
 	added time.Time
 }
 
 type Server struct {
-	content fs.FS
-	token   string
-	addr    string // host:port actually bound
+	content  fs.FS
+	token    string
+	stateDir string // where save-targets.json lives
+	addr     string // host:port actually bound
 
 	mu       sync.Mutex
 	files    map[string]*openFile
@@ -83,13 +85,14 @@ func newToken() string {
 
 func NewServer(content fs.FS) *Server {
 	return &Server{
-		content: content,
-		token:   newToken(),
-		files:   map[string]*openFile{},
-		windows: map[string]time.Time{},
-		gone:    map[string]bool{},
-		started: time.Now(),
-		quit:    make(chan struct{}),
+		content:  content,
+		token:    newToken(),
+		stateDir: dataDir(),
+		files:    map[string]*openFile{},
+		windows:  map[string]time.Time{},
+		gone:     map[string]bool{},
+		started:  time.Now(),
+		quit:     make(chan struct{}),
 	}
 }
 
@@ -140,9 +143,16 @@ func (s *Server) AddFile(p string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		abs = p
+	}
+	if isProjectPath(abs) {
+		s.rememberSaveTarget(abs) // the window may save back into this project file
+	}
 	id := newToken()[:16]
 	s.mu.Lock()
-	s.files[id] = &openFile{name: filepath.Base(p), data: data, added: time.Now()}
+	s.files[id] = &openFile{name: filepath.Base(p), path: abs, data: data, added: time.Now()}
 	s.mu.Unlock()
 	return id, nil
 }
@@ -184,6 +194,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.handleOpen(w, r)
 	case strings.HasPrefix(r.URL.Path, "/__file/"):
 		s.handleFile(w, r)
+	case r.URL.Path == "/__save":
+		s.handleSave(w, r)
 	case r.URL.Path == "/__alive" || r.URL.Path == "/__bye":
 		s.handleLifecycle(w, r)
 	case strings.HasPrefix(r.URL.Path, "/__"):
@@ -278,6 +290,9 @@ func (s *Server) handleFile(w http.ResponseWriter, r *http.Request) {
 	h.Set("Content-Type", "application/octet-stream")
 	h.Set("Cache-Control", "no-store")
 	h.Set("X-Fillmark-Name", url.PathEscape(f.name))
+	if isProjectPath(f.path) {
+		h.Set("X-Fillmark-Path", url.PathEscape(f.path))
+	}
 	w.Write(f.data)
 }
 

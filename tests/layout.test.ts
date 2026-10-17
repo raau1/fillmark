@@ -23,15 +23,17 @@ describe('text layout', () => {
     expect(top).toBeCloseTo(16 - bottom, 5);
   });
 
-  it('shrinks long single-line text to fit, then reports overflow at the minimum size', () => {
+  it('shrinks long single-line text to fit, wrapping in tiny boxes rather than cutting off', () => {
     const f = createField('text', 0, { x: 0, y: 0, w: 60, h: 14 });
     f.style.fontSize = 10;
     const l = layoutText(f, 'Nombre del paciente', m);
     expect(l.fontSize).toBeLessThan(10);
     expect(l.overflow).toBe(false);
     expect(l.lines[0].width).toBeLessThanOrEqual(60);
+    // in a tiny one-line box the answer wraps onto several lines instead of being cut off
     const tiny = layoutText({ ...f, rect: { x: 0, y: 0, w: 20, h: 14 } }, 'Nombre muy largo del paciente con apellidos', m);
-    expect(tiny.overflow).toBe(true);
+    expect(tiny.overflow).toBe(false);
+    expect(tiny.lines.length).toBeGreaterThan(1);
   });
 
   it('fixed mode keeps the size and flags overflow (never silently)', () => {
@@ -169,5 +171,50 @@ describe('shrink keeps everything visible', () => {
     const f = createField('multiline', 0, { x: 0, y: 0, w: 40, h: 12 });
     const l = layoutText(f, 'palabra '.repeat(2000), m);
     expect(l.overflow).toBe(true);
+  });
+});
+
+describe('shrink never cuts text off (sweep)', () => {
+  const words = 'cuando era pequeño intentaba esforzarme de alguna manera, sentía que no podía físicamente hacerlo a no ser que hubiera una sensación de urgencia'.split(' ');
+  const textOf = (n: number) => Array.from({ length: n }, (_, i) => words[i % words.length]).join(' ');
+  it('multi-line boxes of many shapes, line spacings and answer lengths', () => {
+    const failures: string[] = [];
+    for (const [w, h] of [[225.5, 38.5], [225.5, 33], [190, 30], [300, 50], [120, 60], [400, 18], [60, 80]]) {
+      for (const lh of [1, 1.15, 1.5]) {
+        for (let n = 1; n < 420; n += 7) {
+          const f = createField('multiline', 0, { x: 0, y: 0, w, h });
+          f.style.lineHeight = lh;
+          const l = layoutText(f, textOf(n), m);
+          if (l.overflow || l.visibleCount !== l.lines.length) failures.push(`${w}x${h} lh=${lh} words=${n} size=${l.fontSize}`);
+        }
+      }
+    }
+    expect(failures).toEqual([]);
+  });
+  it('one-line boxes', () => {
+    const failures: string[] = [];
+    for (const [w, h] of [[403, 18], [200, 14], [90, 16]]) {
+      for (let n = 1; n < 120; n += 3) {
+        const l = layoutText(createField('text', 0, { x: 0, y: 0, w, h }), textOf(n), m);
+        if (l.overflow) failures.push(`${w}x${h} words=${n}`);
+      }
+    }
+    expect(failures).toEqual([]);
+  });
+});
+
+describe('one-line boxes wrap when that reads better', () => {
+  it('a very long answer in the name box uses two bigger lines instead of one tiny line', () => {
+    const f = createField('text', 0, { x: 0, y: 0, w: 403, h: 18 });
+    const text = 'María del Carmen Fernández-Villaverde Rodríguez de la Fuente y Sánchez-Ñúñez, nacida en Santiago de Compostela el 3 de marzo de 1985, hija de Ana y Luis';
+    const l = layoutText(f, text, m);
+    expect(l.overflow).toBe(false);
+    expect(l.lines.length).toBe(2);
+    const oneLine = 403 - 4; // width available for a single line
+    expect(m.width(l.family, text, l.fontSize)).toBeGreaterThan(oneLine); // would not have fitted on one line at this size
+  });
+  it('a normal answer stays on one line', () => {
+    const l = layoutText(createField('text', 0, { x: 0, y: 0, w: 403, h: 18 }), 'José Ñúñez Güell', m);
+    expect(l.lines.length).toBe(1);
   });
 });

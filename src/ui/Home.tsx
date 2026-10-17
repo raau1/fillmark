@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { FileUp, FolderOpen, LoaderCircle, ShieldCheck, Trash2, TriangleAlert } from 'lucide-react';
 import type { ProjectMeta } from '../core/types';
-import { deleteProject, isProjectFileName, listProjects, LEGACY_PROJECT_EXTS, PROJECT_FILE_EXT } from '../state/persistence';
+import { deleteProject, isProjectFileName, listProjects, LEGACY_PROJECT_EXTS, PROJECT_FILE_EXT, type SaveTarget } from '../state/persistence';
+import { canChooseFiles, pickProjectFile, targetFromDrop } from '../state/fileSave';
 import { useLang, useT } from '../i18n';
 import { cx } from './util';
 
@@ -9,7 +10,7 @@ interface Props {
   busy: string | null;
   error: string | null;
   onOpenPdf(file: File): void;
-  onOpenProjectFile(file: File): void;
+  onOpenProjectFile(file: File, target?: SaveTarget | null): void;
   onOpenStored(id: string): void;
 }
 
@@ -33,11 +34,22 @@ export function Home(p: Props) {
     refresh();
   }, []);
 
-  const handleFiles = (files: FileList | null) => {
+  const handleFiles = (files: FileList | null, target?: SaveTarget | null) => {
     const f = files?.[0];
     if (!f) return;
-    if (isProjectFileName(f.name) || f.type === 'application/json') p.onOpenProjectFile(f);
+    if (isProjectFileName(f.name) || f.type === 'application/json') p.onOpenProjectFile(f, target);
     else p.onOpenPdf(f);
+  };
+
+  // project files opened through the system dialog can be saved back to (Save)
+  const openProjectDialog = async () => {
+    if (!canChooseFiles()) return projInput.current?.click();
+    try {
+      const picked = await pickProjectFile();
+      if (picked) p.onOpenProjectFile(picked.file, picked.target);
+    } catch {
+      projInput.current?.click();
+    }
   };
 
   const fmt = new Intl.DateTimeFormat(lang === 'es' ? 'es-ES' : 'en-GB', { dateStyle: 'medium', timeStyle: 'short' });
@@ -55,7 +67,12 @@ export function Home(p: Props) {
       onDrop={(e) => {
         e.preventDefault();
         setDragOver(false);
-        handleFiles(e.dataTransfer.files);
+        const files = e.dataTransfer.files;
+        const item = e.dataTransfer.items?.[0];
+        const name = files[0]?.name ?? '';
+        // ask for the file's handle synchronously (the drop data is gone after this event)
+        const handle = isProjectFileName(name) ? targetFromDrop(item) : Promise.resolve(null);
+        handle.then((t) => handleFiles(files, t));
       }}
     >
       <header className="home-top">
@@ -107,7 +124,7 @@ export function Home(p: Props) {
         <section className="projects">
           <div className="projects-head">
             <h2>{t('Saved in this browser')}</h2>
-            <button className="btn ghost" onClick={() => projInput.current?.click()}>
+            <button className="btn ghost" onClick={openProjectDialog}>
               <FolderOpen size={16} /> {t('Open a project file…')}
             </button>
             <input ref={projInput} type="file" accept={[PROJECT_FILE_EXT, ...LEGACY_PROJECT_EXTS, 'application/json'].join(',')} hidden onChange={(e) => (handleFiles(e.target.files), (e.target.value = ''))} />

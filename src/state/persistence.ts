@@ -10,6 +10,7 @@ import { FIELD_TYPES, type Field, type ProjectData, type ProjectMeta } from '../
 const store = createStore('pdf-form-filler', 'projects');
 const PROJECT = (id: string) => `project:${id}`;
 const PDF = (id: string) => `pdf:${id}`;
+const TARGET = (id: string) => `target:${id}`;
 
 export const PROJECT_FILE_EXT = '.fillmark';
 /** project files saved by earlier test builds of this app (InkWell, Casilla) */
@@ -43,6 +44,34 @@ export async function loadProject(id: string): Promise<{ data: ProjectData; pdf:
 export async function deleteProject(id: string): Promise<void> {
   await del(PROJECT(id), store);
   await del(PDF(id), store);
+  await del(TARGET(id), store);
+}
+
+// ---------------------------------------------------------------------------
+// The project file a project is saved to ("Save" writes there).
+//  - handle:   a file chosen in a Save/Open dialog (File System Access API, Edge/Chrome)
+//  - launcher: a file opened from Explorer in the desktop app; the launcher writes it
+
+export type SaveTarget =
+  | { kind: 'handle'; name: string; handle: FileSystemFileHandle; savedAt?: number }
+  | { kind: 'launcher'; name: string; path: string; savedAt?: number };
+
+export async function getSaveTarget(id: string): Promise<SaveTarget | null> {
+  try {
+    return ((await get(TARGET(id), store)) as SaveTarget | undefined) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Best effort: some handles cannot be stored (then Save still works until the app is closed). */
+export async function setSaveTarget(id: string, target: SaveTarget | null): Promise<void> {
+  try {
+    if (target) await set(TARGET(id), target, store);
+    else await del(TARGET(id), store);
+  } catch {
+    /* not storable */
+  }
 }
 
 /** Ask the browser not to evict our storage automatically (best effort). */
