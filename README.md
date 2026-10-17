@@ -1,6 +1,6 @@
 # Fillmark — fill in PDF forms without changing how they look
 
-Fillmark is a browser application for filling in existing PDF documents such as clinical questionnaires and patient intake forms. You open a PDF, place (or automatically detect) answer fields on top of the original pages, fill them in, and download a completed copy of the **original** PDF with the answers written onto it.
+Fillmark is a browser application for filling in existing PDF documents such as clinical questionnaires and patient intake forms. You open a PDF, place (or automatically detect) answer fields on top of the original pages, fill them in, and save a completed copy of the **original** PDF with the answers written onto it.
 
 Everything runs locally. No backend, no accounts, no analytics, no third-party requests.
 
@@ -77,7 +77,7 @@ npm run preview      # serves dist/ at http://localhost:4173
 - **Save as…** (Ctrl+Shift+S) always asks for a new name or place.
 - In browsers without file access (Firefox, Safari), Save downloads a copy instead.
 
-Saving a project is separate from exporting the completed PDF.
+Saving a project is separate from exporting the completed PDF. **Export PDF → Save PDF…** opens the normal Save dialog so you choose the folder and name; it remembers the last folder you used. (Browsers without a Save dialog download the file instead.)
 
 ## Privacy
 

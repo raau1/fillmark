@@ -32,10 +32,47 @@ export async function uploadPdf(page, path) {
   await page.waitForFunction(() => document.querySelectorAll('.page-canvas-holder canvas').length > 0, { timeout: 60000 });
 }
 
-/** Download dir handling: route downloads into `dir`. */
+/**
+ * Files the app saves end up in `dir`: plain downloads, and files saved through the
+ * system Save dialog, which is replaced by a stand-in that "chooses" `dir` and records
+ * each call in window.__savePickerLog. Call before the first page load.
+ */
 export async function allowDownloads(page, dir) {
   const cdp = await page.createCDPSession();
   await cdp.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: dir, eventsEnabled: true });
+  const { existsSync, writeFileSync } = await import('node:fs');
+  await page.exposeFunction('__e2eWriteFile', (name, b64) => {
+    // like a browser download: never overwrite, add " (1)" etc.
+    let n = name;
+    for (let i = 1; existsSync(`${dir}/${n}`); i++) n = name.replace(/(\.[^.]+)?$/, ` (${i})$1`);
+    writeFileSync(`${dir}/${n}`, Buffer.from(b64, 'base64'));
+    return n;
+  });
+  await page.evaluateOnNewDocument(() => {
+    window.__savePickerLog = [];
+    window.showSaveFilePicker = async (o) => {
+      window.__savePickerLog.push(o.suggestedName);
+      const h = {
+        kind: 'file',
+        name: o.suggestedName,
+        queryPermission: async () => 'granted',
+        createWritable: async () => {
+          const parts = [];
+          return {
+            write: async (b) => parts.push(b),
+            close: async () => {
+              const bytes = new Uint8Array(await new Blob(parts).arrayBuffer());
+              let bin = '';
+              for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+              await window.__e2eWriteFile(o.suggestedName, btoa(bin));
+            },
+            abort: async () => {},
+          };
+        },
+      };
+      return h;
+    };
+  });
   return cdp;
 }
 

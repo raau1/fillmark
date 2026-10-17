@@ -396,6 +396,10 @@ async function exportPdf(modeLabel) {
 }
 log('export flattened');
 const flat = await exportPdf('flatten');
+{
+  const asked = await page.evaluate(() => window.__savePickerLog.slice());
+  check('Export asks where to save with the system Save dialog (no download bubble)', () => assert.deepEqual(asked, [flat.name]));
+}
 log('export editable');
 const editable = await exportPdf('editable');
 

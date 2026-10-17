@@ -7,6 +7,7 @@ import { useT } from '../i18n';
 import { Viewer, type ViewerHandle } from './Viewer';
 import { useDefaultExportName } from './ExportDialog';
 import { downloadBlob } from './util';
+import { choosePdfDestination, writePdf } from '../state/fileSave';
 
 /** Shows the real flattened output (generated locally), so what you see is what you download. */
 export function PreviewPane({
@@ -33,6 +34,7 @@ export function PreviewPane({
     { kind: 'loading' } | { kind: 'error'; msg: string } | { kind: 'ready'; doc: PDFDocumentProxy; pages: PageInfo[]; bytes: Uint8Array; warnings: string[] }
   >({ kind: 'loading' });
   const [scale, setScale] = useState(1);
+  const [savedMsg, setSavedMsg] = useState<string | null>(null);
   const defaultName = useDefaultExportName(fileName);
 
   useEffect(() => {
@@ -89,11 +91,28 @@ export function PreviewPane({
           <span className="muted">{t('This is the final PDF exactly as it will be saved.')}</span>
         )}
         <span className="spacer" />
+        {savedMsg && (
+          <span className="muted preview-saved" role="status">
+            {savedMsg}
+          </span>
+        )}
         <button className="btn" onClick={onExport}>
           <Settings2 size={15} /> {t('Export options…')}
         </button>
-        <button className="btn primary" onClick={() => downloadBlob(new Blob([state.bytes as BlobPart], { type: 'application/pdf' }), defaultName)}>
-          <Download size={15} /> {t('Download this PDF')}
+        <button
+          className="btn primary"
+          onClick={async () => {
+            try {
+              const dest = await choosePdfDestination(defaultName);
+              if (!dest) return;
+              const saved = await writePdf(dest, new Blob([state.bytes as BlobPart], { type: 'application/pdf' }), defaultName, downloadBlob);
+              setSavedMsg(saved.downloaded ? t('Downloaded “{name}”.', { name: saved.name }) : t('Saved “{name}”.', { name: saved.name }));
+            } catch (e) {
+              setSavedMsg(t('Export failed: {msg}', { msg: (e as Error).message }));
+            }
+          }}
+        >
+          <Download size={15} /> {t('Save this PDF…')}
         </button>
       </div>
       <Viewer
