@@ -34,6 +34,7 @@ import { displayRectToPdf, displayToPdf, makePageInfo } from './coords';
 import { embedFamily, measurerFromFonts, FONTS, FALLBACK_FONT, type FontFiles } from './fonts';
 import { displayText, isChecked, isTextType, layoutText, markGeometry, valueKey, type TextLayout } from './layout';
 import type { Field, FontFamily, PageInfo, Rect, Values } from './types';
+import { fitInk, isImageValue, isInkValue, parseInk } from './signature';
 
 export type ExportMode = 'flatten' | 'editable';
 
@@ -225,6 +226,31 @@ async function drawSignature(doc: PDFDocument, page: PDFPage, info: PageInfo, f:
   const v = f.rect.y + pad + (bh - h) / 2;
   const a = displayToPdf(info, u, v + h);
   page.drawImage(img, { x: a.x, y: a.y, width: w, height: h, rotate: degrees(info.rotation) });
+}
+
+/** A drawn signature: vector strokes in the field's colour, fitted and centred like on screen. */
+function drawInkSignature(page: PDFPage, info: PageInfo, f: Field, value: string, warnings: string[]) {
+  const sig = parseInk(value);
+  if (!sig) {
+    warnings.push(`Signature “${f.name}” could not be read and was skipped.`);
+    return;
+  }
+  const at = fitInk(sig, f.rect);
+  if (!(at.scale > 0)) return;
+  // drawSvgPath places the path's top-left corner at (x, y), y pointing down the page in the rotated frame
+  const a = displayToPdf(info, at.x, at.y);
+  const color = hexToRgb(f.style.color);
+  for (const d of sig.d) {
+    page.drawSvgPath(d, {
+      x: a.x,
+      y: a.y,
+      scale: at.scale,
+      rotate: degrees(info.rotation),
+      borderColor: color,
+      borderWidth: sig.lw, // applied after the scale above, so in the signature's own units
+      borderLineCap: LineCapStyle.Round,
+    });
+  }
 }
 
 function removeImportedOriginals(form: PDFForm, fields: Field[], warnings: string[]) {
@@ -434,7 +460,8 @@ export async function exportPdf(
 
     if (f.type === 'signature') {
       const v = values[valueKey(f)];
-      if (typeof v === 'string' && v.startsWith('data:')) await drawSignature(doc, page, info, f, v, warnings);
+      if (isInkValue(v)) drawInkSignature(page, info, f, v, warnings);
+      else if (isImageValue(v)) await drawSignature(doc, page, info, f, v, warnings);
     }
   }
 

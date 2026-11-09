@@ -8,6 +8,7 @@ import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { exportPdf } from '../src/core/exportPdf';
 import { createField } from '../src/core/fieldFactory';
 import type { Field, Rect, Values } from '../src/core/types';
+import { encodeInk } from '../src/core/signature';
 import { bboxOf, isBlue, isRed, loadForFontsOnce, rasterizeAt } from './exportHelpers';
 
 const RED = '#ff0000';
@@ -31,6 +32,7 @@ const BOXES: Record<string, Rect> = {
   text: { x: 40, y: 90, w: 200, h: 18 },
   multi: { x: 40, y: 130, w: 150, h: 60 },
   right: { x: 40, y: 210, w: 200, h: 16 },
+  sig: { x: 260, y: 50, w: 120, h: 40 },
 };
 
 async function buildTestPdf(): Promise<Uint8Array> {
@@ -86,7 +88,11 @@ function makeFields(): { fields: Field[]; values: Values } {
     right.style.align = 'right';
     right.style.fontSize = 10;
     right.style.fontFamily = 'helvetica';
-    fields.push(check, fill, text, multi, right);
+    const sig = createField('signature', page, BOXES.sig, { name: `sig${page}` });
+    sig.style.color = RED;
+    fields.push(check, fill, text, multi, right, sig);
+    // an "L": down the left side, then along the bottom (tells up from down and left from right)
+    values[sig.id] = encodeInk([[{ x: 0, y: 0 }, { x: 0, y: 40 }, { x: 60, y: 40 }]], 2.2)!;
     values[check.id] = true;
     values[fill.id] = true;
     values[text.id] = 'Ñandú pingüino ÁÉÍÓÚ ¿qué?';
@@ -139,6 +145,15 @@ describe('PDF export alignment (rasterised with poppler)', async () => {
           if (key === 'right') {
             expect(box.x + box.w - sub.x1).toBeLessThan(4);
             expect(box.x + box.w - sub.x1).toBeGreaterThan(0.5);
+          }
+          if (key === 'sig') {
+            // centred in the box, upright and not mirrored: ink in the top-left and along the bottom, none top-right
+            expect((sub.x0 + sub.x1) / 2).toBeCloseTo(box.x + box.w / 2, 0);
+            expect(sub.x1 - sub.x0).toBeGreaterThan(45);
+            const topRight = bboxOf(r, isRed, { x: sub.x0 + 15, y: sub.y0, w: sub.x1 - sub.x0 - 15, h: (sub.y1 - sub.y0) / 2 });
+            expect(topRight, `${mode} page ${page} signature orientation`).toBeNull();
+            expect(bboxOf(r, isRed, { x: sub.x0, y: sub.y0, w: 5, h: 8 })).not.toBeNull();
+            expect(bboxOf(r, isRed, { x: sub.x1 - 8, y: sub.y1 - 5, w: 8, h: 5 })).not.toBeNull();
           }
           if (key === 'multi') {
             // wrapped onto several lines

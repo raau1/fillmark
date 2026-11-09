@@ -2,6 +2,8 @@ import { memo } from 'react';
 import { FONTS, type Measurer } from '../core/fonts';
 import { displayText, effectiveValue, isChecked, isTextType, layoutText, markGeometry, type TextLayout } from '../core/layout';
 import type { Field, Values } from '../core/types';
+import { fitInk, isImageValue, parseInk } from '../core/signature';
+import { InkPaths } from './Ink';
 
 /**
  * Draws what will be printed for a field, in display points, inside an SVG
@@ -82,10 +84,17 @@ export const FieldContent = memo(function FieldContent({
 
   if (field.type === 'signature') {
     const v = effectiveValue(field, values);
+    const ink = typeof v === 'string' ? parseInk(v) : null;
+    const at = ink && fitInk(ink, rect);
     return (
       <g>
         {deco}
-        {typeof v === 'string' && v.startsWith('data:image/') && (
+        {ink && at && at.scale > 0 && (
+          <g transform={`translate(${at.x} ${at.y}) scale(${at.scale})`}>
+            <InkPaths sig={ink} color={style.color} />
+          </g>
+        )}
+        {isImageValue(v) && (
           <image href={v} x={rect.x + 1} y={rect.y + 1} width={Math.max(0, rect.w - 2)} height={Math.max(0, rect.h - 2)} preserveAspectRatio="xMidYMid meet" />
         )}
       </g>

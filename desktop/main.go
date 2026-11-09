@@ -32,7 +32,7 @@ var distFS embed.FS
 
 const (
 	appName    = "Fillmark"
-	appVersion = "0.3.3"
+	appVersion = "0.3.4"
 	projectExt = ".fillmark"
 )
 

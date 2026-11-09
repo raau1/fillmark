@@ -64,7 +64,7 @@ npm run preview      # serves dist/ at http://localhost:4173
    - Or place fields by hand: pick a tool (text, long text, checkbox, option, date, number, dropdown, signature, fixed note), then click on the page or drag to draw the size. After detection, clicking inside a printed box snaps the new field to it.
    - Move fields by dragging, resize with the handles, nudge with the arrow keys (Shift = 10 pt), align/distribute several fields, duplicate (Ctrl+D), copy/paste between pages, undo/redo (Ctrl+Z / Ctrl+Shift+Z).
    - The right panel sets label, section, type, exact position (points), font, size (automatic or fixed), colour, alignment, line spacing, overflow behaviour (shrink or keep size), check-mark style, border, background, required, default value, dropdown options and option groups.
-3. **Fill form** — answer in the side panel (grouped by section, with search and progress) or click directly on the page: clicking a checkbox ticks it, clicking a text box lets you type straight onto the page (Enter or a click elsewhere to finish). Answers that are too long for their box shrink to fit as you type; if text gets very small (under 5 pt) the form shows a notice. Focusing an input in the side panel scrolls the page to its box.
+3. **Fill form** — answer in the side panel (grouped by section, with search and progress) or click directly on the page: clicking a checkbox ticks it, clicking a text box lets you type straight onto the page (Enter or a click elsewhere to finish). Answers that are too long for their box shrink to fit as you type; if text gets very small (under 5 pt) the form shows a notice. Focusing an input in the side panel scrolls the page to its box. **Signatures** are drawn with mouse, pen or finger in an ink colour you choose (blue, black, green, red or any other); *Undo* removes the last stroke. A drawn signature is kept as pen strokes, so it stays sharp at any zoom and in the PDF, and changing the field's *Colour* in Edit form recolours it. An uploaded image (PNG/JPEG) keeps its own colours.
 4. **Preview PDF** — shows the actual generated PDF, page by page.
 5. **Export PDF** — choose a file name and
    - **Final copy** (recommended): answers are drawn onto the pages (flattened);
@@ -115,6 +115,7 @@ node e2e/run.mjs path/to/form.pdf     # manual placement, fill, alignment at 5 z
                                       # preview, browser-storage reopen, project file round trip, invalid/encrypted files, no external requests
 node e2e/detect.mjs path/to/form.pdf  # detection + OCR labels, accept all, fill, export: every tick inside its printed square
 node e2e/rotated.mjs                  # drag fields on rotated/cropped pages in the UI, export, verify
+node e2e/signature.mjs form.pdf       # draw a signature, ink colour, undo, recolour, export in place
 node e2e/desktop.mjs path/to/form.pdf # desktop launcher (Linux build of the same code): token/Host protection, CSP,
                                       # open a PDF from the command line, hand a .fillmark file to a running instance, exit after the last window
 ```

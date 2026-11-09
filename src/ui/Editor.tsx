@@ -691,6 +691,16 @@ export function Editor({ initial, pdf, doc, measurer, formFieldCount, onClose }:
               smallSizes={smallSizes}
               onFocusField={revealField}
               onValue={setValue}
+              onSignature={(f, value, color) =>
+                api.updateBoth(
+                  ({ fields: fs, values: vs }) => ({
+                    // the ink colour chosen in the pad becomes the field's colour (also used when exporting)
+                    fields: fs.map((x) => (x.id === f.id && x.style.color !== color ? { ...x, style: { ...x.style, color } } : x)),
+                    values: { ...vs, [valueKey(f)]: value },
+                  }),
+                  `sign:${Date.now()}`,
+                )
+              }
               onResetField={(f) =>
                 api.updateValues((vs) => {
                   const n = { ...vs };

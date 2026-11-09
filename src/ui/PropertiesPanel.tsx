@@ -250,7 +250,7 @@ export function PropertiesPanel(p: Props) {
       )}
 
       <Section title={t('Appearance')}>
-        <Row label={t('Colour')}>
+        <Row label={t('Colour')} hint={p.fields.some((f) => f.type === 'signature') ? t('For signatures, the ink colour of a drawn signature. Uploaded images keep their own colours.') : undefined}>
           {(id) => <input id={id} type="color" value={same('color') ?? '#000000'} onChange={(e) => setStyle({ color: e.target.value }, 'color')} />}
         </Row>
         <Row label={t('Border')}>

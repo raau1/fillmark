@@ -4,6 +4,8 @@ import { effectiveValue, isChecked, valueKey } from '../core/layout';
 import type { Field, Values } from '../core/types';
 import { useT } from '../i18n';
 import { SignaturePad } from './SignaturePad';
+import { InkPaths } from './Ink';
+import { hasSignature, isImageValue, parseInk } from '../core/signature';
 import { cx, readingOrder } from './util';
 
 interface Props {
@@ -15,6 +17,8 @@ interface Props {
   smallSizes: Map<string, number>;
   onFocusField(f: Field): void;
   onValue(f: Field, v: string | boolean, key?: string): void;
+  /** a new signature for f, drawn (or chosen) in this ink colour */
+  onSignature(f: Field, value: string, color: string): void;
   onResetField(f: Field): void;
   onClearAll(): void;
   onEditForm(): void;
@@ -128,9 +132,10 @@ export function FillPanel(p: Props) {
       </div>
       {signing && (
         <SignaturePad
+          color={signing.style.color}
           onCancel={() => setSigning(null)}
-          onSave={(url) => {
-            p.onValue(signing, url, `sign:${Date.now()}`);
+          onSave={(value, color) => {
+            p.onSignature(signing, value, color);
             setSigning(null);
           }}
         />
@@ -165,6 +170,7 @@ function FieldInput({ field: f, values, activeId, overflowIds, smallSizes, onFoc
   }
 
   const str = typeof v === 'string' ? v : '';
+  const ink = f.type === 'signature' ? parseInk(str) : null;
   const reset =
     str !== '' ? (
       <button className="icon-btn tiny" onClick={() => onResetField(f)} aria-label={t('Clear this answer')} title={t('Clear this answer')}>
@@ -209,9 +215,14 @@ function FieldInput({ field: f, values, activeId, overflowIds, smallSizes, onFoc
       )}
       {f.type === 'signature' && (
         <div className="inline">
-          {str.startsWith('data:') && <img src={str} alt={t('Signature')} className="sig-thumb" />}
+          {isImageValue(str) && <img src={str} alt={t('Signature')} className="sig-thumb" />}
+          {ink && (
+            <svg className="sig-thumb" viewBox={`0 0 ${ink.w} ${ink.h}`} role="img" aria-label={t('Signature')}>
+              <InkPaths sig={ink} color={f.style.color} />
+            </svg>
+          )}
           <button className="btn small" onClick={() => onSign(f)} {...common}>
-            <PenTool size={14} /> {str ? t('Sign again') : t('Sign')}
+            <PenTool size={14} /> {hasSignature(str) ? t('Sign again') : t('Sign')}
           </button>
         </div>
       )}
